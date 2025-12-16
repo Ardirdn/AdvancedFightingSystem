@@ -1,5 +1,5 @@
 {
-  "name": "Roblox - TrimatraSystem",
+  "name": "AdvancedFightingSystem",
   "tree": {
     "$className": "DataModel",
     "ReplicatedStorage": {
@@ -40,19 +40,25 @@
             512
           ]
         }
+      },
+      "FightingArena": {
+        "$className": "Folder"
+      },
+      "Leaderboard": {
+        "$className": "Folder"
       }
     },
     "Lighting": {
       "$properties": {
         "Ambient": [
-          0,
-          0,
-          0
+          0.2,
+          0.2,
+          0.25
         ],
         "Brightness": 2,
         "GlobalShadows": true,
         "Outlines": false,
-        "Technology": "Voxel"
+        "Technology": "Future"
       }
     },
     "SoundService": {
