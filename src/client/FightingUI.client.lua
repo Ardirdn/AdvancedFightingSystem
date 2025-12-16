@@ -529,7 +529,91 @@ local function createFightingUI()
         hideResultScreen()
     end)
     
+    -- ============================================
+    -- BIG CENTER TEXT (for announcements)
+    -- ============================================
+    
+    local centerText = Instance.new("TextLabel")
+    centerText.Name = "CenterText"
+    centerText.Size = UDim2.new(1, 0, 0, 200)
+    centerText.Position = UDim2.new(0, 0, 0.35, 0)
+    centerText.BackgroundTransparency = 1
+    centerText.Font = Enum.Font.GothamBlack
+    centerText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    centerText.TextSize = 120
+    centerText.Text = ""
+    centerText.TextStrokeTransparency = 0
+    centerText.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    centerText.Visible = false
+    centerText.ZIndex = 100
+    centerText.Parent = fightingGui
+    
     print("🎨 [FightingUI] UI Created")
+end
+
+-- ============================================
+-- BIG TEXT ANNOUNCEMENT FUNCTIONS
+-- ============================================
+
+local function showBigText(text, color, duration, size)
+    if not fightingGui then return end
+    
+    local centerText = fightingGui:FindFirstChild("CenterText")
+    if not centerText then return end
+    
+    centerText.Text = text
+    centerText.TextColor3 = color or Color3.fromRGB(255, 255, 255)
+    centerText.TextSize = 0
+    centerText.TextTransparency = 0
+    centerText.TextStrokeTransparency = 0
+    centerText.Visible = true
+    
+    local targetSize = size or 120
+    
+    -- Pop in animation
+    TweenService:Create(centerText, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        TextSize = targetSize
+    }):Play()
+    
+    -- Fade out after duration
+    task.delay(duration or 1, function()
+        TweenService:Create(centerText, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {
+            TextTransparency = 1,
+            TextStrokeTransparency = 1,
+            TextSize = targetSize * 1.2
+        }):Play()
+        
+        task.delay(0.3, function()
+            centerText.Visible = false
+        end)
+    end)
+end
+
+local function showRoundAnnouncement(roundNumber)
+    -- Show "ROUND X"
+    showBigText("ROUND " .. roundNumber, Color3.fromRGB(255, 220, 100), 1.2, 100)
+    
+    -- Countdown after round text
+    task.delay(1.5, function()
+        showBigText("3", Color3.fromRGB(255, 255, 255), 0.8, 150)
+    end)
+    
+    task.delay(2.5, function()
+        showBigText("2", Color3.fromRGB(255, 255, 255), 0.8, 150)
+    end)
+    
+    task.delay(3.5, function()
+        showBigText("1", Color3.fromRGB(255, 255, 255), 0.8, 150)
+    end)
+    
+    task.delay(4.5, function()
+        showBigText("FIGHT!", Color3.fromRGB(255, 100, 100), 1.0, 130)
+    end)
+end
+
+local function showRoundEnded(roundNumber, winnerName)
+    local text = "ROUND " .. roundNumber .. " ENDED"
+    showBigText(text, Color3.fromRGB(200, 200, 200), 2.0, 80)
 end
 
 -- ============================================
@@ -716,6 +800,9 @@ RoundStartEvent.OnClientEvent:Connect(function(data)
     
     updateRoundIndicator()
     
+    -- Show round announcement with countdown
+    showRoundAnnouncement(currentRound)
+    
     -- Reset timer
     roundTimer = FightingConfig.Match.RoundTimeLimit
     
@@ -731,6 +818,9 @@ end)
 RoundEndEvent.OnClientEvent:Connect(function(data)
     myWins = mySide == "A" and data.PlayerAWins or data.PlayerBWins
     opponentWins = mySide == "A" and data.PlayerBWins or data.PlayerAWins
+    
+    -- Show round ended announcement
+    showRoundEnded(currentRound, data.WinnerName)
 end)
 
 EndMatchEvent.OnClientEvent:Connect(function(data)

@@ -19,6 +19,7 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local ContextActionService = game:GetService("ContextActionService")
+local Lighting = game:GetService("Lighting")
 
 print("✅ [FightingClient] Services loaded")
 
@@ -599,6 +600,8 @@ local shakeStartTime = 0
 local shakeAmplitude = 0   -- Studs - how far camera moves
 local shakeFrequency = 0   -- Hz - oscillations per second  
 local shakeDuration = 0    -- Seconds
+local shakeZoomAmount = 0  -- Zoom in amount
+local originalFOV = 70     -- Default FOV
 
 -- Shake update function bound to RenderStep
 local function updateCameraShake()
@@ -608,6 +611,8 @@ local function updateCameraShake()
     
     if elapsed >= shakeDuration then
         isShaking = false
+        -- Restore FOV smoothly
+        TweenService:Create(Camera, TweenInfo.new(0.15), {FieldOfView = originalFOV}):Play()
         RunService:UnbindFromRenderStep("FightingCameraShake")
         return
     end
@@ -615,9 +620,9 @@ local function updateCameraShake()
     -- Decreasing intensity over time (ease out)
     local progress = elapsed / shakeDuration
     local currentAmplitude = shakeAmplitude * (1 - progress)
+    local currentZoom = shakeZoomAmount * (1 - progress)
     
     -- Convert frequency (Hz) to angular velocity
-    -- Frequency in Hz = cycles per second, so multiply by 2*pi for radians/sec
     local time = tick()
     local angularVelocity = shakeFrequency * 2 * math.pi
     
@@ -628,16 +633,23 @@ local function updateCameraShake()
     -- Apply offset to camera
     local shakeOffset = Vector3.new(offsetX, offsetY, 0)
     Camera.CFrame = Camera.CFrame * CFrame.new(shakeOffset)
+    
+    -- Apply zoom effect (lower FOV = zoom in)
+    if shakeZoomAmount > 0 then
+        Camera.FieldOfView = originalFOV - currentZoom
+    end
 end
 
-local function cameraShake(amplitude, frequency, duration)
+local function cameraShake(amplitude, frequency, duration, zoomAmount, isHitEffect)
     -- Set shake parameters
     shakeAmplitude = amplitude
     shakeFrequency = frequency
     shakeDuration = duration
+    shakeZoomAmount = zoomAmount or 0
     shakeStartTime = tick()
+    originalFOV = Camera.FieldOfView
     
-    print("📷 [SHAKE] Started: amplitude=" .. amplitude .. " studs, frequency=" .. frequency .. " Hz, duration=" .. duration .. "s")
+    print("📷 [SHAKE] Started: amp=" .. amplitude .. ", freq=" .. frequency .. "Hz, dur=" .. duration .. "s, zoom=" .. (zoomAmount or 0))
     
     -- Unbind if already bound
     if isShaking then
@@ -650,6 +662,53 @@ local function cameraShake(amplitude, frequency, duration)
     
     -- Bind with priority HIGHER than camera (Camera.Value + 1)
     RunService:BindToRenderStep("FightingCameraShake", Enum.RenderPriority.Camera.Value + 1, updateCameraShake)
+    
+    -- ============================================
+    -- BLOOD SCREEN EFFECT (ColorCorrection)
+    -- ============================================
+    if isHitEffect then
+        local hitFx = FightingConfig.Camera.HitEffects
+        
+        local colorCorrection = Lighting:FindFirstChild("ColorCorrection")
+        if colorCorrection and hitFx then
+            -- Animate to red tint + high contrast
+            TweenService:Create(colorCorrection, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                TintColor = hitFx.BloodTintColor or Color3.fromRGB(255, 100, 100),
+                Contrast = hitFx.BloodContrast or 0.5,
+            }):Play()
+            
+            -- Return to normal after duration
+            task.delay(duration * 0.5, function()
+                TweenService:Create(colorCorrection, TweenInfo.new(duration * 0.5, Enum.EasingStyle.Quad), {
+                    TintColor = hitFx.DefaultTintColor or Color3.fromRGB(255, 255, 255),
+                    Contrast = hitFx.DefaultContrast or 0.1,
+                }):Play()
+            end)
+        end
+        
+        -- ============================================
+        -- BLUR EFFECT
+        -- ============================================
+        local blur = Lighting:FindFirstChild("Blur")
+        if blur and hitFx then
+            -- Enable and animate blur in
+            blur.Enabled = true
+            TweenService:Create(blur, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Size = hitFx.BlurAmount or 10,
+            }):Play()
+            
+            -- Animate blur out and disable
+            task.delay(duration * 0.5, function()
+                TweenService:Create(blur, TweenInfo.new(duration * 0.5, Enum.EasingStyle.Quad), {
+                    Size = 0,
+                }):Play()
+                
+                task.delay(duration * 0.5, function()
+                    blur.Enabled = false
+                end)
+            end)
+        end
+    end
 end
 
 -- ============================================
@@ -1133,11 +1192,15 @@ CameraShakeEvent.OnClientEvent:Connect(function(shakeType)
     print("📷 [SHAKE] Received shake event:", shakeType)
     
     if shakeType == "Hit" and config.HitShake then
-        cameraShake(config.HitShake.Amplitude, config.HitShake.Frequency, config.HitShake.Duration)
+        local s = config.HitShake
+        -- Hit gets blood + blur effects (isHitEffect = true)
+        cameraShake(s.Amplitude, s.Frequency, s.Duration, s.ZoomAmount or 0, true)
     elseif shakeType == "Block" and config.BlockShake then
-        cameraShake(config.BlockShake.Amplitude, config.BlockShake.Frequency, config.BlockShake.Duration)
+        local s = config.BlockShake
+        cameraShake(s.Amplitude, s.Frequency, s.Duration, s.ZoomAmount or 0, false)
     elseif shakeType == "Attack" and config.AttackShake then
-        cameraShake(config.AttackShake.Amplitude, config.AttackShake.Frequency, config.AttackShake.Duration)
+        local s = config.AttackShake
+        cameraShake(s.Amplitude, s.Frequency, s.Duration, s.ZoomAmount or 0, false)
     end
 end)
 

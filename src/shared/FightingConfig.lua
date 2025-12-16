@@ -59,7 +59,7 @@ FightingConfig.Combat = {
     -- Dodge
     Dodge = {
         StaminaCost = 10,
-        Distance = 15, -- Jarak dodge dalam studs
+        Distance = 7, -- Jarak dodge dalam studs
         Duration = 0.3, -- Durasi animasi dodge (detik)
         InvincibilityFrames = 0.2, -- Durasi tidak bisa di-hit saat dodge
         Cooldown = 0.5,
@@ -111,12 +111,15 @@ FightingConfig.Camera = {
     --   Recommended: 10 (slow/smooth), 25 (normal), 50+ (fast/intense)
     -- Duration = durasi shake dalam detik
     --   Recommended: 0.1 (quick), 0.3 (normal), 0.5+ (long)
+    -- ZoomAmount = seberapa banyak kamera zoom in saat shake (0 = no zoom)
+    --   Recommended: 0 (none), 0.5 (subtle), 1.0 (normal), 2.0 (strong)
     
     -- Shake saat TERKENA HIT
     HitShake = {
-        Amplitude = .5,   -- Studs - seberapa jauh kamera bergerak
-        Frequency = 3,     -- Hz - kecepatan getaran
-        Duration = 0.5,     -- Detik
+        Amplitude = 0.5,
+        Frequency = 3,
+        Duration = 0.5,
+        ZoomAmount = 1.5,  -- Zoom in effect saat hit
     },
     
     -- Shake saat BLOCK berhasil
@@ -124,13 +127,31 @@ FightingConfig.Camera = {
         Amplitude = 0.15,
         Frequency = 3,
         Duration = 0.5,
+        ZoomAmount = 0.5,  -- Subtle zoom saat block
     },
     
     -- Shake saat MENYERANG (feedback untuk attacker)
     AttackShake = {
-        Amplitude = .5,
+        Amplitude = 0.5,
         Frequency = 2,
         Duration = 0.3,
+        ZoomAmount = 0.8,  -- Medium zoom saat menyerang
+    },
+    
+    -- ============================================
+    -- HIT EFFECTS (Blood Screen + Blur)
+    -- ============================================
+    HitEffects = {
+        -- Blood screen (ColorCorrection effect)
+        BloodTintColor = Color3.fromRGB(255, 100, 100),  -- Red tint color
+        BloodContrast = 0.15,  -- Contrast saat hit (default 0.1)
+        
+        -- Blur effect
+        BlurAmount = 20,  -- Blur size saat hit
+        
+        -- Default values (saat tidak ada effect)
+        DefaultTintColor = Color3.fromRGB(255, 255, 255),
+        DefaultContrast = 0.1,
     },
     
     -- Transition
