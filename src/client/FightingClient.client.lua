@@ -1078,6 +1078,14 @@ StartMatchEvent.OnClientEvent:Connect(function(data)
     -- Find opponent
     currentOpponent = Players:FindFirstChild(data.OpponentName)
     
+    -- Disable jumping (space is used for dodge instead)
+    if Humanoid then
+        Humanoid:SetAttribute("OriginalJumpPower", Humanoid.JumpPower)
+        Humanoid.JumpPower = 0
+        Humanoid.JumpHeight = 0
+        print("🚫 [FightingClient] Jump disabled for fight")
+    end
+    
     -- Load animations
     loadAnimations()
     
@@ -1094,6 +1102,14 @@ EndMatchEvent.OnClientEvent:Connect(function(data)
     
     -- Stop camera
     stopFightCamera()
+    
+    -- Re-enable jumping
+    if Humanoid then
+        local originalJump = Humanoid:GetAttribute("OriginalJumpPower") or 50
+        Humanoid.JumpPower = originalJump
+        Humanoid.JumpHeight = 7.2  -- Default Roblox jump height
+        print("✅ [FightingClient] Jump re-enabled")
+    end
     
     -- Hide action buttons
     hideActionButtons()

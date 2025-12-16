@@ -59,7 +59,7 @@ FightingConfig.Combat = {
     -- Dodge
     Dodge = {
         StaminaCost = 10,
-        Distance = 7, -- Jarak dodge dalam studs
+        Distance = 10, -- Jarak dodge dalam studs
         Duration = 0.3, -- Durasi animasi dodge (detik)
         InvincibilityFrames = 0.2, -- Durasi tidak bisa di-hit saat dodge
         Cooldown = 0.5,

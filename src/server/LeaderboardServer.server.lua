@@ -24,46 +24,50 @@ local LeaderboardFolder = workspace:FindFirstChild("Leaderboard")
 local function createEntryTemplate()
     local frame = Instance.new("Frame")
     frame.Name = "EntryTemplate"
-    frame.Size = UDim2.new(1, -10, 0, 45)
+    frame.Size = UDim2.new(1, -20, 0, 55)  -- Bigger height, more margin
     frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    frame.BackgroundTransparency = 0.5  -- Semi-transparent
+    frame.BackgroundTransparency = 0.5
     frame.BorderSizePixel = 0
     
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 8)
     corner.Parent = frame
     
+    -- Rank (left side with more padding)
     local rank = Instance.new("TextLabel")
     rank.Name = "Rank"
-    rank.Size = UDim2.new(0, 50, 1, 0)
-    rank.Position = UDim2.new(0, 8, 0, 0)
+    rank.Size = UDim2.new(0, 60, 1, 0)
+    rank.Position = UDim2.new(0, 15, 0, 0)  -- More left padding
     rank.BackgroundTransparency = 1
     rank.Font = Enum.Font.GothamBlack
     rank.TextColor3 = Color3.fromRGB(255, 200, 50)
-    rank.TextSize = 24  -- Larger
+    rank.TextSize = 28  -- Bigger
     rank.Text = "#1"
     rank.Parent = frame
     
+    -- Player name (middle)
     local name = Instance.new("TextLabel")
     name.Name = "PlayerName"
-    name.Size = UDim2.new(0.5, -60, 1, 0)
-    name.Position = UDim2.new(0, 60, 0, 0)
+    name.Size = UDim2.new(0.5, -30, 1, 0)
+    name.Position = UDim2.new(0, 80, 0, 0)  -- After rank
     name.BackgroundTransparency = 1
     name.Font = Enum.Font.GothamBold
     name.TextColor3 = Color3.fromRGB(255, 255, 255)
-    name.TextSize = 20  -- Larger
+    name.TextSize = 24  -- Bigger
     name.TextXAlignment = Enum.TextXAlignment.Left
+    name.TextTruncate = Enum.TextTruncate.AtEnd
     name.Text = "PlayerName"
     name.Parent = frame
     
+    -- Value (right side with padding from edge)
     local value = Instance.new("TextLabel")
     value.Name = "Value"
-    value.Size = UDim2.new(0.3, 0, 1, 0)
-    value.Position = UDim2.new(0.7, 0, 0, 0)
+    value.Size = UDim2.new(0.3, -20, 1, 0)  -- Added right margin
+    value.Position = UDim2.new(0.7, -10, 0, 0)
     value.BackgroundTransparency = 1
     value.Font = Enum.Font.GothamBlack
     value.TextColor3 = Color3.fromRGB(100, 255, 150)
-    value.TextSize = 22  -- Larger
+    value.TextSize = 26  -- Bigger
     value.TextXAlignment = Enum.TextXAlignment.Right
     value.Text = "0"
     value.Parent = frame
@@ -88,38 +92,39 @@ local function setupLeaderboardGui(surfaceGui, title, statName)
     container.BorderSizePixel = 0
     container.Parent = surfaceGui
     
-    -- Title (LARGER)
+    -- Title (BIGGER)
     local titleLabel = Instance.new("TextLabel")
     titleLabel.Name = "Title"
-    titleLabel.Size = UDim2.new(1, 0, 0, 60)
-    titleLabel.Position = UDim2.new(0, 0, 0, 5)
+    titleLabel.Size = UDim2.new(1, -40, 0, 70)  -- More padding
+    titleLabel.Position = UDim2.new(0, 20, 0, 10)
     titleLabel.BackgroundTransparency = 1
     titleLabel.Font = Enum.Font.GothamBlack
     titleLabel.TextColor3 = Color3.fromRGB(255, 220, 100)
-    titleLabel.TextSize = 32  -- Much larger
-    titleLabel.TextStrokeTransparency = 0.5  -- Add stroke for visibility
+    titleLabel.TextSize = 38  -- Even bigger
+    titleLabel.TextStrokeTransparency = 0.3
     titleLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
     titleLabel.Text = title
     titleLabel.Parent = container
     
     -- Divider
     local divider = Instance.new("Frame")
     divider.Name = "Divider"
-    divider.Size = UDim2.new(0.9, 0, 0, 3)
-    divider.Position = UDim2.new(0.05, 0, 0, 65)
+    divider.Size = UDim2.new(0.9, 0, 0, 4)  -- Thicker
+    divider.Position = UDim2.new(0.05, 0, 0, 80)
     divider.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
     divider.BackgroundTransparency = 0.3
     divider.BorderSizePixel = 0
     divider.Parent = container
     
-    -- Entries container
+    -- Entries container (with more margin)
     local entriesFrame = Instance.new("ScrollingFrame")
     entriesFrame.Name = "Entries"
-    entriesFrame.Size = UDim2.new(0.95, 0, 1, -85)
-    entriesFrame.Position = UDim2.new(0.025, 0, 0, 75)
+    entriesFrame.Size = UDim2.new(0.92, 0, 1, -100)  -- More margin
+    entriesFrame.Position = UDim2.new(0.04, 0, 0, 90)
     entriesFrame.BackgroundTransparency = 1
     entriesFrame.BorderSizePixel = 0
-    entriesFrame.ScrollBarThickness = 6
+    entriesFrame.ScrollBarThickness = 8
     entriesFrame.ScrollBarImageColor3 = Color3.fromRGB(255, 200, 50)
     entriesFrame.ScrollBarImageTransparency = 0.3
     entriesFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
@@ -127,7 +132,7 @@ local function setupLeaderboardGui(surfaceGui, title, statName)
     
     local listLayout = Instance.new("UIListLayout")
     listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    listLayout.Padding = UDim.new(0, 8)  -- More spacing
+    listLayout.Padding = UDim.new(0, 12)  -- More spacing between entries
     listLayout.Parent = entriesFrame
     
     -- Store stat name for updates
