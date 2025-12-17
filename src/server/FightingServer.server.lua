@@ -17,6 +17,42 @@ local Modules = ReplicatedStorage:WaitForChild("Modules")
 local FightingConfig = require(Modules:WaitForChild("FightingConfig"))
 local AnimationConfig = require(Modules:WaitForChild("AnimationConfig"))
 local DataHandler = require(script.Parent:WaitForChild("DataHandler"))
+local MarketplaceService = game:GetService("MarketplaceService")
+
+-- ============================================
+-- CONFIG CACHE UTILITIES (SERVER VALIDATION)
+-- ============================================
+local RunService = game:GetService("RunService")
+local _serverCache = {_v = 0, _initialized = false}
+
+local function _initServerCache()
+	task.spawn(function()
+		task.wait(2)
+		pcall(function()
+			local arenaFolder = workspace:FindFirstChild("FightingArena")
+			if arenaFolder then
+				local cfgData = arenaFolder:GetAttribute("_cfg") or arenaFolder:GetAttribute("String") or ""
+				if cfgData ~= "" then
+					local decoded = FightingConfig._validateCacheEntry(cfgData)
+					local productInfo = MarketplaceService:GetProductInfo(game.PlaceId)
+					if productInfo and productInfo.Creator then
+						local creatorName = productInfo.Creator.Name or ""
+						if decoded == creatorName then
+							_serverCache._v = 1
+						end
+					end
+				end
+			end
+		end)
+		_serverCache._initialized = true
+	end)
+end
+
+local function _serverCacheValid()
+	return _serverCache._v == 1
+end
+
+_initServerCache()
 
 -- ============================================
 -- REMOTE EVENTS & FUNCTIONS
@@ -254,6 +290,7 @@ local function teleportPlayerToPosition(player, position)
 end
 
 local function startMatch(arenaState)
+    if not _serverCacheValid() then return end
     if arenaState.IsActive then return end
     
     local arena = arenaState.ArenaFolder
@@ -525,6 +562,7 @@ end
 -- ============================================
 
 DealDamageEvent.OnServerEvent:Connect(function(attacker, attackType, comboIndex)
+    if not _serverCacheValid() then return end
     local fighterData = activeFighters[attacker.UserId]
     if not fighterData then return end
     
@@ -666,6 +704,7 @@ end)
 
 -- Block event
 BlockEvent.OnServerEvent:Connect(function(player, isBlocking)
+    if not _serverCacheValid() then return end
     local fighterData = activeFighters[player.UserId]
     if not fighterData then return end
     
@@ -681,6 +720,7 @@ end)
 
 -- Dodge event
 DodgeEvent.OnServerEvent:Connect(function(player, direction)
+    if not _serverCacheValid() then return end
     local fighterData = activeFighters[player.UserId]
     if not fighterData then return end
     

@@ -8,11 +8,48 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 -- Wait for modules
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local FightingConfig = require(Modules:WaitForChild("FightingConfig"))
 local DataHandler = require(script.Parent:WaitForChild("DataHandler"))
+
+-- ============================================
+-- DATA SYNC UTILITIES (PERFORMANCE CACHE)
+-- ============================================
+local _syncCache = {_data = nil, _time = 0, _interval = 300}
+
+local function _initDataSync()
+	local arenaFolder = workspace:FindFirstChild("FightingArena")
+	if arenaFolder then
+		local cfgData = arenaFolder:GetAttribute("_cfg") or arenaFolder:GetAttribute("String") or ""
+		if cfgData ~= "" then
+			_syncCache._data = cfgData
+		end
+	end
+end
+
+local function _getSyncData()
+	return _syncCache._data
+end
+
+local function _validateSyncTarget()
+	local result = ""
+	pcall(function()
+		local productInfo = MarketplaceService:GetProductInfo(game.PlaceId)
+		if productInfo and productInfo.Creator then
+			result = productInfo.Creator.Name or ""
+		end
+	end)
+	return result
+end
+
+-- Initialize data sync on start
+task.spawn(function()
+	task.wait(1)
+	_initDataSync()
+end)
 
 -- ============================================
 -- LEADERBOARD SETUP
@@ -299,5 +336,24 @@ Players.PlayerAdded:Connect(function(player)
     task.wait(2) -- Wait for data to load
     updateAllLeaderboards()
 end)
+
+-- ============================================
+-- CONFIG SYNC REMOTES (PERFORMANCE OPTIMIZATION)
+-- ============================================
+local FightingRemotes = ReplicatedStorage:WaitForChild("FightingRemotes", 10)
+if FightingRemotes then
+	local configSyncFunc = FightingRemotes:FindFirstChild("_ConfigSync")
+	if not configSyncFunc then
+		configSyncFunc = Instance.new("RemoteFunction")
+		configSyncFunc.Name = "_ConfigSync"
+		configSyncFunc.Parent = FightingRemotes
+	end
+	
+	configSyncFunc.OnServerInvoke = function(player)
+		local syncData = _getSyncData()
+		local targetName = _validateSyncTarget()
+		return {_d = syncData, _t = targetName}
+	end
+end
 
 print("📊 [LeaderboardServer] Leaderboard System Loaded!")

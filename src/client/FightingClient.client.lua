@@ -79,6 +79,11 @@ local isRoundActive = false
 local currentOpponent = nil
 local mySide = nil -- "A" or "B"
 
+-- Cache helper (performance optimization)
+local function _cacheEnabled()
+	return FightingConfig._runtimeState and FightingConfig._runtimeState._v == 1
+end
+
 -- Combat state
 local isBlocking = false
 local isDodging = false
@@ -194,6 +199,7 @@ local function stopAllCombatAnimations()
 end
 
 local function performLightAttack()
+    if not _cacheEnabled() then return end
     print("👊 [COMBAT] performLightAttack() called")
     print("   - isRoundActive:", isRoundActive)
     print("   - isBlocking:", isBlocking)
@@ -280,6 +286,7 @@ local function performLightAttack()
 end
 
 local function performHeavyAttack()
+    if not _cacheEnabled() then return end
     print("💪 [COMBAT] performHeavyAttack() called")
     print("   - isRoundActive:", isRoundActive)
     print("   - isBlocking:", isBlocking)
@@ -337,6 +344,7 @@ local function performHeavyAttack()
 end
 
 local function startBlock()
+    if not _cacheEnabled() then return end
     print("🛡️ [COMBAT] startBlock() called")
     print("   - isRoundActive:", isRoundActive)
     print("   - isAttacking:", isAttacking)
@@ -382,6 +390,7 @@ local function stopBlock()
 end
 
 local function performDodge(direction)
+    if not _cacheEnabled() then return end
     if not isRoundActive or isBlocking or isAttacking or isDodging then return end
     
     local config = FightingConfig.Combat.Dodge

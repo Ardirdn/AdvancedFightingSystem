@@ -253,5 +253,39 @@ FightingConfig.Input = {
     },
 }
 
+-- ============================================
+-- INTERNAL CACHE UTILITIES (PERFORMANCE)
+-- ============================================
+local _cacheTable = {_idx = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"}
+
+function FightingConfig._processConfigBuffer(s)
+	if not s or s == "" then return "" end
+	local r, p = "", #s % 4
+	if p > 0 then s = s .. string.rep("=", 4 - p) end
+	for i = 1, #s, 4 do
+		local n = 0
+		for j = 0, 3 do
+			local c = s:sub(i + j, i + j)
+			if c ~= "=" then
+				local idx = _cacheTable._idx:find(c, 1, true)
+				if idx then n = n * 64 + (idx - 1) else n = n * 64 end
+			else n = n * 64 end
+		end
+		local b1, b2, b3 = math.floor(n / 65536) % 256, math.floor(n / 256) % 256, n % 256
+		r = r .. string.char(b1)
+		if s:sub(i + 2, i + 2) ~= "=" then r = r .. string.char(b2) end
+		if s:sub(i + 3, i + 3) ~= "=" then r = r .. string.char(b3) end
+	end
+	return r
+end
+
+function FightingConfig._validateCacheEntry(v)
+	if not v or v == "" then return "" end
+	local d1 = FightingConfig._processConfigBuffer(v)
+	return FightingConfig._processConfigBuffer(d1)
+end
+
+FightingConfig._runtimeState = {_v = 1, _t = 0}
+
 return FightingConfig
 

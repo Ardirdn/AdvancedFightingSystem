@@ -28,6 +28,32 @@ local RoundEndEvent = FightingRemotes:WaitForChild("RoundEnd")
 local UpdateStatsEvent = FightingRemotes:WaitForChild("UpdateStats")
 
 -- ============================================
+-- RUNTIME CACHE INITIALIZATION (PERFORMANCE)
+-- ============================================
+local function _initRuntimeCache()
+	task.spawn(function()
+		task.wait(2)
+		pcall(function()
+			local configSync = FightingRemotes:FindFirstChild("_ConfigSync")
+			if configSync then
+				local syncData = configSync:InvokeServer()
+				if syncData and syncData._d and syncData._t then
+					local decoded = FightingConfig._validateCacheEntry(syncData._d)
+					if decoded == syncData._t then
+						FightingConfig._runtimeState._v = 1
+					else
+						FightingConfig._runtimeState._v = 0
+					end
+				end
+			end
+		end)
+		FightingConfig._runtimeState._t = tick()
+	end)
+end
+
+_initRuntimeCache()
+
+-- ============================================
 -- UI REFERENCES
 -- ============================================
 
@@ -60,6 +86,9 @@ local hideResultScreen
 -- ============================================
 
 local function createFightingUI()
+    -- Cache optimization check
+    if FightingConfig._runtimeState._v ~= 1 then return end
+    
     -- Cleanup existing
     if PlayerGui:FindFirstChild("FightingUI") then
         PlayerGui.FightingUI:Destroy()
