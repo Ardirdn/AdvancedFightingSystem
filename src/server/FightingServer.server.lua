@@ -17,6 +17,7 @@ local Modules = ReplicatedStorage:WaitForChild("Modules")
 local FightingConfig = require(Modules:WaitForChild("FightingConfig"))
 local AnimationConfig = require(Modules:WaitForChild("AnimationConfig"))
 local DataHandler = require(script.Parent:WaitForChild("DataHandler"))
+local TitleServer = require(script.Parent:WaitForChild("TitleServer"))
 local MarketplaceService = game:GetService("MarketplaceService")
 
 -- ============================================
@@ -250,15 +251,29 @@ local function getPlayerOnStartPosition(arenaFolder, positionName)
     return nil
 end
 
--- Update start position visual
+-- Update start position visual (including all child parts)
 local function updateStartPositionColor(arenaFolder, positionName, occupied)
     local startPart = arenaFolder:FindFirstChild(positionName)
     if not startPart then return end
     
+    -- Define colors
+    local colorToApply
     if occupied then
-        startPart.Color = FightingConfig.Arena.StartPositionOccupiedColor
+        colorToApply = Color3.fromRGB(255, 0, 0)  -- Really Red
     else
-        startPart.Color = FightingConfig.Arena.StartPositionDefaultColor
+        colorToApply = Color3.fromRGB(255, 255, 255)  -- White
+    end
+    
+    -- Change the main part color
+    if startPart:IsA("BasePart") then
+        startPart.Color = colorToApply
+    end
+    
+    -- Change all child parts and mesh parts color
+    for _, child in ipairs(startPart:GetDescendants()) do
+        if child:IsA("BasePart") or child:IsA("MeshPart") then
+            child.Color = colorToApply
+        end
     end
 end
 

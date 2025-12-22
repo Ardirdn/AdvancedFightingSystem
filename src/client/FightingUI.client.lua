@@ -682,6 +682,11 @@ local function createFightingUI()
     
     closeButton.MouseButton1Click:Connect(function()
         hideResultScreen()
+        
+        -- Stop fight music and resume ambient music
+        if _G.StopFightMusic then
+            _G.StopFightMusic()
+        end
     end)
     
     -- ============================================

@@ -36,6 +36,10 @@ local DEFAULT_DATA = {
     TotalDodges = 0,
     TotalDamageDealt = 0,
     TotalDamageTaken = 0,
+    
+    -- Title System
+    SpecialTitle = "",      -- Admin-given special title
+    EquippedTitle = "",     -- Player-selected title
 }
 
 -- ============================================
@@ -129,6 +133,73 @@ function DataHandler.GetData(player)
 end
 
 -- ============================================
+-- PLAYER STATS SYNC (for client-side reading)
+-- ============================================
+
+-- Create IntValue objects in player for client to read
+function DataHandler.CreatePlayerStats(player)
+    if not player then return end
+    
+    -- Create PlayerStats folder if not exists
+    local statsFolder = player:FindFirstChild("PlayerStats")
+    if not statsFolder then
+        statsFolder = Instance.new("Folder")
+        statsFolder.Name = "PlayerStats"
+        statsFolder.Parent = player
+    end
+    
+    -- Create RoundsWin IntValue
+    local roundsWin = statsFolder:FindFirstChild("RoundsWin")
+    if not roundsWin then
+        roundsWin = Instance.new("IntValue")
+        roundsWin.Name = "RoundsWin"
+        roundsWin.Value = 0
+        roundsWin.Parent = statsFolder
+    end
+    
+    -- Create MatchWin IntValue
+    local matchWin = statsFolder:FindFirstChild("MatchWin")
+    if not matchWin then
+        matchWin = Instance.new("IntValue")
+        matchWin.Name = "MatchWin"
+        matchWin.Value = 0
+        matchWin.Parent = statsFolder
+    end
+    
+    -- Sync with data
+    local data = DataHandler.GetData(player)
+    if data then
+        roundsWin.Value = data.RoundsWin or 0
+        matchWin.Value = data.MatchWin or 0
+    end
+    
+    return statsFolder
+end
+
+-- Update IntValue objects when data changes
+function DataHandler.UpdatePlayerStats(player)
+    if not player then return end
+    
+    local statsFolder = player:FindFirstChild("PlayerStats")
+    if not statsFolder then
+        statsFolder = DataHandler.CreatePlayerStats(player)
+    end
+    
+    local data = DataHandler.GetData(player)
+    if not data then return end
+    
+    local roundsWin = statsFolder:FindFirstChild("RoundsWin")
+    if roundsWin then
+        roundsWin.Value = data.RoundsWin or 0
+    end
+    
+    local matchWin = statsFolder:FindFirstChild("MatchWin")
+    if matchWin then
+        matchWin.Value = data.MatchWin or 0
+    end
+end
+
+-- ============================================
 -- STAT UPDATE FUNCTIONS
 -- ============================================
 
@@ -141,6 +212,17 @@ function DataHandler.AddRoundWin(player, count)
         task.spawn(function()
             DataHandler.UpdateLeaderboard(player, "RoundsWin", data.RoundsWin)
         end)
+        
+        -- Update IntValue for client-side reading
+        DataHandler.UpdatePlayerStats(player)
+        
+        -- Notify TitleServer to update tier title
+        task.spawn(function()
+            if _G.TitleServer then
+                _G.TitleServer:UpdateTierTitle(player)
+            end
+        end)
+        
         return data.RoundsWin
     end
     return 0
@@ -155,6 +237,10 @@ function DataHandler.AddMatchWin(player, count)
         task.spawn(function()
             DataHandler.UpdateLeaderboard(player, "MatchWin", data.MatchWin)
         end)
+        
+        -- Update IntValue for client-side reading
+        DataHandler.UpdatePlayerStats(player)
+        
         return data.MatchWin
     end
     return 0
@@ -337,6 +423,13 @@ end
 Players.PlayerAdded:Connect(function(player)
     DataHandler.LoadData(player)
     DataHandler.StartSession(player)
+    
+    -- Create PlayerStats IntValue objects for client to read
+    task.delay(1, function()
+        if player and player.Parent then
+            DataHandler.CreatePlayerStats(player)
+        end
+    end)
 end)
 
 -- Handle player leaving
@@ -375,6 +468,14 @@ for _, player in ipairs(Players:GetPlayers()) do
         DataHandler.LoadData(player)
         DataHandler.StartSession(player)
     end
+    
+    -- Create PlayerStats for existing players
+    task.spawn(function()
+        task.wait(1)
+        if player and player.Parent then
+            DataHandler.CreatePlayerStats(player)
+        end
+    end)
 end
 
 return DataHandler
