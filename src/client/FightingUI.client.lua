@@ -103,35 +103,54 @@ local function createFightingUI()
     fightingGui.Parent = PlayerGui
     
     -- ============================================
-    -- TOP BAR - Main HUD Container
+    -- TOP BAR - Main HUD Container (Dark Glass Style)
     -- ============================================
     
     local topBar = Instance.new("Frame")
     topBar.Name = "TopBar"
-    topBar.Size = UDim2.new(1, 0, 0, 80)
+    topBar.Size = UDim2.new(1, 0, 0.12, 0)
     topBar.Position = UDim2.new(0, 0, 0, 10)
     topBar.BackgroundTransparency = 1
     topBar.Parent = fightingGui
     
     -- ============================================
-    -- LEFT SIDE - MY STATS
+    -- LEFT SIDE - MY STATS (Dark Glass)
     -- ============================================
     
     local myStats = Instance.new("Frame")
     myStats.Name = "MyStats"
-    myStats.Size = UDim2.new(0.35, 0, 1, 0)
-    myStats.Position = UDim2.new(0, 20, 0, 0)
-    myStats.BackgroundTransparency = 1
+    myStats.Size = UDim2.new(0.38, 0, 0.9, 0)
+    myStats.Position = UDim2.new(0.01, 0, 0.05, 0)
+    myStats.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+    myStats.BackgroundTransparency = 0.2
+    myStats.BorderSizePixel = 0
     myStats.Parent = topBar
     
-    -- My Avatar
+    local myStatsCorner = Instance.new("UICorner")
+    myStatsCorner.CornerRadius = UDim.new(0, 12)
+    myStatsCorner.Parent = myStats
+    
+    local myStatsStroke = Instance.new("UIStroke")
+    myStatsStroke.Color = Color3.fromRGB(80, 200, 80)
+    myStatsStroke.Thickness = 2
+    myStatsStroke.Transparency = 0.5
+    myStatsStroke.Parent = myStats
+    
+    -- AspectRatio Constraint for avatar
+    local myAspect = Instance.new("UIAspectRatioConstraint")
+    myAspect.AspectRatio = 1
+    myAspect.DominantAxis = Enum.DominantAxis.Height
+    
+    -- My Avatar (LEFT side, square)
     local myAvatarFrame = Instance.new("Frame")
     myAvatarFrame.Name = "AvatarFrame"
-    myAvatarFrame.Size = UDim2.new(0, 40, 0, 40)
-    myAvatarFrame.Position = UDim2.new(0, 0, 0, 0)
-    myAvatarFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    myAvatarFrame.Size = UDim2.new(0.15, 0, 0.8, 0)
+    myAvatarFrame.Position = UDim2.new(0.02, 0, 0.1, 0)
+    myAvatarFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
     myAvatarFrame.BorderSizePixel = 0
     myAvatarFrame.Parent = myStats
+    
+    myAspect.Parent = myAvatarFrame
     
     local myAvatarCorner = Instance.new("UICorner")
     myAvatarCorner.CornerRadius = UDim.new(0, 8)
@@ -139,14 +158,15 @@ local function createFightingUI()
     
     local myAvatarStroke = Instance.new("UIStroke")
     myAvatarStroke.Color = Color3.fromRGB(80, 200, 80)
-    myAvatarStroke.Thickness = 2
+    myAvatarStroke.Thickness = 3
     myAvatarStroke.Parent = myAvatarFrame
     
     local myAvatar = Instance.new("ImageLabel")
     myAvatar.Name = "Avatar"
     myAvatar.Size = UDim2.new(1, 0, 1, 0)
     myAvatar.BackgroundTransparency = 1
-    myAvatar.Image = Players:GetUserThumbnailAsync(Player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
+    myAvatar.ScaleType = Enum.ScaleType.Crop
+    myAvatar.Image = Players:GetUserThumbnailAsync(Player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
     myAvatar.Parent = myAvatarFrame
     
     local myAvatarImgCorner = Instance.new("UICorner")
@@ -156,28 +176,34 @@ local function createFightingUI()
     -- My Name (next to avatar)
     myNameLabel = Instance.new("TextLabel")
     myNameLabel.Name = "MyName"
-    myNameLabel.Size = UDim2.new(0, 180, 0, 25)
-    myNameLabel.Position = UDim2.new(0, 48, 0, 8)
+    myNameLabel.Size = UDim2.new(0.6, 0, 0.3, 0)
+    myNameLabel.Position = UDim2.new(0.2, 0, 0.08, 0)
     myNameLabel.BackgroundTransparency = 1
     myNameLabel.Font = Enum.Font.GothamBlack
     myNameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    myNameLabel.TextSize = 16
+    myNameLabel.TextScaled = true
     myNameLabel.TextXAlignment = Enum.TextXAlignment.Left
     myNameLabel.Text = Player.Name
-    myNameLabel.TextStrokeTransparency = 0.5
+    myNameLabel.TextStrokeTransparency = 0.3
+    myNameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
     myNameLabel.Parent = myStats
+    
+    local myNameConstraint = Instance.new("UITextSizeConstraint")
+    myNameConstraint.MaxTextSize = 22
+    myNameConstraint.MinTextSize = 12
+    myNameConstraint.Parent = myNameLabel
     
     -- My Health Bar Background
     local myHealthBg = Instance.new("Frame")
     myHealthBg.Name = "HealthBg"
-    myHealthBg.Size = UDim2.new(1, 0, 0, 22)
-    myHealthBg.Position = UDim2.new(0, 0, 0, 28)
-    myHealthBg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    myHealthBg.Size = UDim2.new(0.76, 0, 0.28, 0)
+    myHealthBg.Position = UDim2.new(0.2, 0, 0.38, 0)
+    myHealthBg.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
     myHealthBg.BorderSizePixel = 0
     myHealthBg.Parent = myStats
     
     local myHealthBgCorner = Instance.new("UICorner")
-    myHealthBgCorner.CornerRadius = UDim.new(0, 4)
+    myHealthBgCorner.CornerRadius = UDim.new(0, 6)
     myHealthBgCorner.Parent = myHealthBg
     
     -- My Health Bar Fill
@@ -189,7 +215,7 @@ local function createFightingUI()
     myHealthBar.Parent = myHealthBg
     
     local myHealthCorner = Instance.new("UICorner")
-    myHealthCorner.CornerRadius = UDim.new(0, 4)
+    myHealthCorner.CornerRadius = UDim.new(0, 6)
     myHealthCorner.Parent = myHealthBar
     
     -- Health gradient
@@ -204,14 +230,14 @@ local function createFightingUI()
     -- My Stamina Bar Background
     local myStaminaBg = Instance.new("Frame")
     myStaminaBg.Name = "StaminaBg"
-    myStaminaBg.Size = UDim2.new(0.8, 0, 0, 10)
-    myStaminaBg.Position = UDim2.new(0, 0, 0, 52)
-    myStaminaBg.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    myStaminaBg.Size = UDim2.new(0.6, 0, 0.15, 0)
+    myStaminaBg.Position = UDim2.new(0.2, 0, 0.7, 0)
+    myStaminaBg.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
     myStaminaBg.BorderSizePixel = 0
     myStaminaBg.Parent = myStats
     
     local myStaminaBgCorner = Instance.new("UICorner")
-    myStaminaBgCorner.CornerRadius = UDim.new(0, 3)
+    myStaminaBgCorner.CornerRadius = UDim.new(0, 4)
     myStaminaBgCorner.Parent = myStaminaBg
     
     -- My Stamina Bar Fill
@@ -223,8 +249,17 @@ local function createFightingUI()
     myStaminaBar.Parent = myStaminaBg
     
     local myStaminaCorner = Instance.new("UICorner")
-    myStaminaCorner.CornerRadius = UDim.new(0, 3)
+    myStaminaCorner.CornerRadius = UDim.new(0, 4)
     myStaminaCorner.Parent = myStaminaBar
+    
+    -- Stamina gradient
+    local staminaGradient = Instance.new("UIGradient")
+    staminaGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 200, 240)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 160, 200))
+    })
+    staminaGradient.Rotation = 90
+    staminaGradient.Parent = myStaminaBar
     
     -- ============================================
     -- CENTER - TIMER & ROUND
@@ -280,24 +315,43 @@ local function createFightingUI()
     roundLabel.Parent = centerStats
     
     -- ============================================
-    -- RIGHT SIDE - OPPONENT STATS
+    -- RIGHT SIDE - OPPONENT STATS (Dark Glass - Mirrored)
     -- ============================================
     
     local opponentStats = Instance.new("Frame")
     opponentStats.Name = "OpponentStats"
-    opponentStats.Size = UDim2.new(0.35, 0, 1, 0)
-    opponentStats.Position = UDim2.new(0.65, -20, 0, 0)
-    opponentStats.BackgroundTransparency = 1
+    opponentStats.Size = UDim2.new(0.38, 0, 0.9, 0)
+    opponentStats.Position = UDim2.new(0.61, 0, 0.05, 0)
+    opponentStats.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+    opponentStats.BackgroundTransparency = 0.2
+    opponentStats.BorderSizePixel = 0
     opponentStats.Parent = topBar
     
-    -- Opponent Avatar (on right side)
+    local oppStatsCorner = Instance.new("UICorner")
+    oppStatsCorner.CornerRadius = UDim.new(0, 12)
+    oppStatsCorner.Parent = opponentStats
+    
+    local oppStatsStroke = Instance.new("UIStroke")
+    oppStatsStroke.Color = Color3.fromRGB(200, 80, 80)
+    oppStatsStroke.Thickness = 2
+    oppStatsStroke.Transparency = 0.5
+    oppStatsStroke.Parent = opponentStats
+    
+    -- AspectRatio Constraint for opponent avatar
+    local oppAspect = Instance.new("UIAspectRatioConstraint")
+    oppAspect.AspectRatio = 1
+    oppAspect.DominantAxis = Enum.DominantAxis.Height
+    
+    -- Opponent Avatar (RIGHT side, square)
     local oppAvatarFrame = Instance.new("Frame")
     oppAvatarFrame.Name = "AvatarFrame"
-    oppAvatarFrame.Size = UDim2.new(0, 40, 0, 40)
-    oppAvatarFrame.Position = UDim2.new(1, -40, 0, 0)
-    oppAvatarFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    oppAvatarFrame.Size = UDim2.new(0.15, 0, 0.8, 0)
+    oppAvatarFrame.Position = UDim2.new(0.83, 0, 0.1, 0)
+    oppAvatarFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
     oppAvatarFrame.BorderSizePixel = 0
     oppAvatarFrame.Parent = opponentStats
+    
+    oppAspect.Parent = oppAvatarFrame
     
     local oppAvatarCorner = Instance.new("UICorner")
     oppAvatarCorner.CornerRadius = UDim.new(0, 8)
@@ -305,13 +359,14 @@ local function createFightingUI()
     
     local oppAvatarStroke = Instance.new("UIStroke")
     oppAvatarStroke.Color = Color3.fromRGB(200, 80, 80)
-    oppAvatarStroke.Thickness = 2
+    oppAvatarStroke.Thickness = 3
     oppAvatarStroke.Parent = oppAvatarFrame
     
     local oppAvatar = Instance.new("ImageLabel")
     oppAvatar.Name = "Avatar"
     oppAvatar.Size = UDim2.new(1, 0, 1, 0)
     oppAvatar.BackgroundTransparency = 1
+    oppAvatar.ScaleType = Enum.ScaleType.Crop
     oppAvatar.Image = ""  -- Will be set when opponent is known
     oppAvatar.Parent = oppAvatarFrame
     
@@ -319,31 +374,37 @@ local function createFightingUI()
     oppAvatarImgCorner.CornerRadius = UDim.new(0, 6)
     oppAvatarImgCorner.Parent = oppAvatar
     
-    -- Opponent Name (next to avatar)
+    -- Opponent Name (right aligned, next to avatar)
     opponentNameLabel = Instance.new("TextLabel")
     opponentNameLabel.Name = "OpponentName"
-    opponentNameLabel.Size = UDim2.new(0, 180, 0, 25)
-    opponentNameLabel.Position = UDim2.new(1, -228, 0, 8)
+    opponentNameLabel.Size = UDim2.new(0.6, 0, 0.3, 0)
+    opponentNameLabel.Position = UDim2.new(0.2, 0, 0.08, 0)
     opponentNameLabel.BackgroundTransparency = 1
     opponentNameLabel.Font = Enum.Font.GothamBlack
     opponentNameLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-    opponentNameLabel.TextSize = 16
+    opponentNameLabel.TextScaled = true
     opponentNameLabel.TextXAlignment = Enum.TextXAlignment.Right
     opponentNameLabel.Text = "Opponent"
-    opponentNameLabel.TextStrokeTransparency = 0.5
+    opponentNameLabel.TextStrokeTransparency = 0.3
+    opponentNameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
     opponentNameLabel.Parent = opponentStats
+    
+    local oppNameConstraint = Instance.new("UITextSizeConstraint")
+    oppNameConstraint.MaxTextSize = 22
+    oppNameConstraint.MinTextSize = 12
+    oppNameConstraint.Parent = opponentNameLabel
     
     -- Opponent Health Bar Background
     local oppHealthBg = Instance.new("Frame")
     oppHealthBg.Name = "HealthBg"
-    oppHealthBg.Size = UDim2.new(1, 0, 0, 22)
-    oppHealthBg.Position = UDim2.new(0, 0, 0, 28)
-    oppHealthBg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    oppHealthBg.Size = UDim2.new(0.76, 0, 0.28, 0)
+    oppHealthBg.Position = UDim2.new(0.04, 0, 0.38, 0)
+    oppHealthBg.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
     oppHealthBg.BorderSizePixel = 0
     oppHealthBg.Parent = opponentStats
     
     local oppHealthBgCorner = Instance.new("UICorner")
-    oppHealthBgCorner.CornerRadius = UDim.new(0, 4)
+    oppHealthBgCorner.CornerRadius = UDim.new(0, 6)
     oppHealthBgCorner.Parent = oppHealthBg
     
     -- Opponent Health Bar Fill (from right side)
@@ -357,7 +418,7 @@ local function createFightingUI()
     opponentHealthBar.Parent = oppHealthBg
     
     local oppHealthCorner = Instance.new("UICorner")
-    oppHealthCorner.CornerRadius = UDim.new(0, 4)
+    oppHealthCorner.CornerRadius = UDim.new(0, 6)
     oppHealthCorner.Parent = opponentHealthBar
     
     -- Opponent health gradient
@@ -372,14 +433,14 @@ local function createFightingUI()
     -- Opponent Stamina Bar Background
     local oppStaminaBg = Instance.new("Frame")
     oppStaminaBg.Name = "StaminaBg"
-    oppStaminaBg.Size = UDim2.new(0.8, 0, 0, 10)
-    oppStaminaBg.Position = UDim2.new(0.2, 0, 0, 52)
-    oppStaminaBg.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    oppStaminaBg.Size = UDim2.new(0.6, 0, 0.15, 0)
+    oppStaminaBg.Position = UDim2.new(0.2, 0, 0.7, 0)
+    oppStaminaBg.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
     oppStaminaBg.BorderSizePixel = 0
     oppStaminaBg.Parent = opponentStats
     
     local oppStaminaBgCorner = Instance.new("UICorner")
-    oppStaminaBgCorner.CornerRadius = UDim.new(0, 3)
+    oppStaminaBgCorner.CornerRadius = UDim.new(0, 4)
     oppStaminaBgCorner.Parent = oppStaminaBg
     
     -- Opponent Stamina Bar Fill
@@ -393,8 +454,17 @@ local function createFightingUI()
     opponentStaminaBar.Parent = oppStaminaBg
     
     local oppStaminaCorner = Instance.new("UICorner")
-    oppStaminaCorner.CornerRadius = UDim.new(0, 3)
+    oppStaminaCorner.CornerRadius = UDim.new(0, 4)
     oppStaminaCorner.Parent = opponentStaminaBar
+    
+    -- Opponent stamina gradient
+    local oppStaminaGradient = Instance.new("UIGradient")
+    oppStaminaGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 200, 240)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 160, 200))
+    })
+    oppStaminaGradient.Rotation = 90
+    oppStaminaGradient.Parent = opponentStaminaBar
     
     -- ============================================
     -- RIGHT SIDE CONTROLS DISPLAY
@@ -455,23 +525,26 @@ local function createFightingUI()
     end
     
     -- ============================================
-    -- RESULT SCREEN
+    -- RESULT SCREEN (Dark Glass Black/Red Style)
     -- ============================================
     
     resultScreen = Instance.new("Frame")
     resultScreen.Name = "ResultScreen"
     resultScreen.Size = UDim2.new(1, 0, 1, 0)
     resultScreen.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    resultScreen.BackgroundTransparency = 0.5
+    resultScreen.BackgroundTransparency = 0.3
     resultScreen.BorderSizePixel = 0
     resultScreen.Visible = false
     resultScreen.Parent = fightingGui
     
+    -- Glass container with dark styling
     local resultContainer = Instance.new("Frame")
     resultContainer.Name = "Container"
-    resultContainer.Size = UDim2.new(0, 500, 0, 400)
-    resultContainer.Position = UDim2.new(0.5, -250, 0.5, -200)
-    resultContainer.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    resultContainer.Size = UDim2.new(0.4, 0, 0, 420)
+    resultContainer.Position = UDim2.new(0.5, 0, 0.5, 0)
+    resultContainer.AnchorPoint = Vector2.new(0.5, 0.5)
+    resultContainer.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+    resultContainer.BackgroundTransparency = 0.1
     resultContainer.BorderSizePixel = 0
     resultContainer.Parent = resultScreen
     
@@ -479,36 +552,65 @@ local function createFightingUI()
     containerCorner.CornerRadius = UDim.new(0, 20)
     containerCorner.Parent = resultContainer
     
-    -- Result title
+    -- Red accent stroke
+    local containerStroke = Instance.new("UIStroke")
+    containerStroke.Color = Color3.fromRGB(180, 40, 40)
+    containerStroke.Thickness = 2
+    containerStroke.Transparency = 0.3
+    containerStroke.Parent = resultContainer
+    
+    -- Gradient overlay
+    local containerGradient = Instance.new("UIGradient")
+    containerGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 30, 35)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 15, 20))
+    })
+    containerGradient.Rotation = 90
+    containerGradient.Parent = resultContainer
+    
+    -- Result title (WIN = Green accent, LOSE = Red accent)
     local resultTitle = Instance.new("TextLabel")
     resultTitle.Name = "Title"
-    resultTitle.Size = UDim2.new(1, 0, 0, 80)
+    resultTitle.Size = UDim2.new(1, 0, 0, 90)
     resultTitle.Position = UDim2.new(0, 0, 0, 20)
     resultTitle.BackgroundTransparency = 1
     resultTitle.Font = Enum.Font.GothamBlack
     resultTitle.TextColor3 = Color3.fromRGB(100, 255, 100)
-    resultTitle.TextSize = 48
+    resultTitle.TextScaled = true
     resultTitle.Text = "YOU WIN!"
+    resultTitle.TextStrokeTransparency = 0.5
+    resultTitle.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
     resultTitle.Parent = resultContainer
     
-    -- Score label
+    local titleConstraint = Instance.new("UITextSizeConstraint")
+    titleConstraint.MaxTextSize = 56
+    titleConstraint.MinTextSize = 28
+    titleConstraint.Parent = resultTitle
+    
+    -- Score label with red accent
     local scoreText = Instance.new("TextLabel")
     scoreText.Name = "Score"
-    scoreText.Size = UDim2.new(1, 0, 0, 40)
-    scoreText.Position = UDim2.new(0, 0, 0, 100)
+    scoreText.Size = UDim2.new(1, 0, 0, 45)
+    scoreText.Position = UDim2.new(0, 0, 0, 110)
     scoreText.BackgroundTransparency = 1
     scoreText.Font = Enum.Font.GothamBold
-    scoreText.TextColor3 = Color3.fromRGB(100, 200, 255)
-    scoreText.TextSize = 28
+    scoreText.TextColor3 = Color3.fromRGB(220, 80, 80)
+    scoreText.TextScaled = true
     scoreText.Text = "Final Score: 2 - 0"
     scoreText.Parent = resultContainer
     
-    -- Stats container
+    local scoreConstraint = Instance.new("UITextSizeConstraint")
+    scoreConstraint.MaxTextSize = 28
+    scoreConstraint.MinTextSize = 16
+    scoreConstraint.Parent = scoreText
+    
+    -- Stats container with glass effect
     local statsContainer = Instance.new("Frame")
     statsContainer.Name = "Stats"
-    statsContainer.Size = UDim2.new(0.8, 0, 0, 130)
-    statsContainer.Position = UDim2.new(0.1, 0, 0, 150)
-    statsContainer.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    statsContainer.Size = UDim2.new(0.9, 0, 0, 140)
+    statsContainer.Position = UDim2.new(0.05, 0, 0, 160)
+    statsContainer.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    statsContainer.BackgroundTransparency = 0.3
     statsContainer.BorderSizePixel = 0
     statsContainer.Parent = resultContainer
     
@@ -516,43 +618,67 @@ local function createFightingUI()
     statsCorner.CornerRadius = UDim.new(0, 12)
     statsCorner.Parent = statsContainer
     
-    -- Stats labels
+    local statsStroke = Instance.new("UIStroke")
+    statsStroke.Color = Color3.fromRGB(80, 80, 90)
+    statsStroke.Thickness = 1
+    statsStroke.Transparency = 0.5
+    statsStroke.Parent = statsContainer
+    
+    -- Stats labels with better styling
     local function createStatRow(name, yPos)
         local row = Instance.new("TextLabel")
         row.Name = name
-        row.Size = UDim2.new(1, -20, 0, 25)
-        row.Position = UDim2.new(0, 10, 0, yPos)
+        row.Size = UDim2.new(1, -30, 0, 28)
+        row.Position = UDim2.new(0, 15, 0, yPos)
         row.BackgroundTransparency = 1
         row.Font = Enum.Font.GothamMedium
-        row.TextColor3 = Color3.fromRGB(200, 200, 200)
-        row.TextSize = 16
+        row.TextColor3 = Color3.fromRGB(200, 200, 210)
+        row.TextScaled = true
         row.TextXAlignment = Enum.TextXAlignment.Left
         row.Text = name .. ": 0"
         row.Parent = statsContainer
+        
+        local rowConstraint = Instance.new("UITextSizeConstraint")
+        rowConstraint.MaxTextSize = 18
+        rowConstraint.MinTextSize = 12
+        rowConstraint.Parent = row
+        
         return row
     end
     
     createStatRow("Total Hits", 10)
-    createStatRow("Successful Blocks", 35)
-    createStatRow("Total Damage", 60)
-    createStatRow("Rounds Won", 85)
+    createStatRow("Successful Blocks", 38)
+    createStatRow("Total Damage", 66)
+    createStatRow("Rounds Won", 94)
     
-    -- Continue button
+    -- Continue button with red accent
     local closeButton = Instance.new("TextButton")
     closeButton.Name = "ContinueButton"
-    closeButton.Size = UDim2.new(0.7, 0, 0, 50)
-    closeButton.Position = UDim2.new(0.15, 0, 0, 320)
-    closeButton.BackgroundColor3 = Color3.fromRGB(80, 180, 100)
+    closeButton.Size = UDim2.new(0.8, 0, 0, 55)
+    closeButton.Position = UDim2.new(0.1, 0, 0, 330)
+    closeButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
     closeButton.BorderSizePixel = 0
-    closeButton.Font = Enum.Font.GothamBold
+    closeButton.Font = Enum.Font.GothamBlack
     closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    closeButton.TextSize = 20
+    closeButton.TextScaled = true
     closeButton.Text = "CONTINUE"
+    closeButton.AutoButtonColor = true
     closeButton.Parent = resultContainer
+    
+    local closeConstraint = Instance.new("UITextSizeConstraint")
+    closeConstraint.MaxTextSize = 22
+    closeConstraint.MinTextSize = 14
+    closeConstraint.Parent = closeButton
     
     local closeCorner = Instance.new("UICorner")
     closeCorner.CornerRadius = UDim.new(0, 12)
     closeCorner.Parent = closeButton
+    
+    local closeStroke = Instance.new("UIStroke")
+    closeStroke.Color = Color3.fromRGB(220, 80, 80)
+    closeStroke.Thickness = 2
+    closeStroke.Transparency = 0.3
+    closeStroke.Parent = closeButton
     
     closeButton.MouseButton1Click:Connect(function()
         hideResultScreen()
@@ -738,10 +864,11 @@ local function showResultScreen(isWinner, myScore, opponentScore, stats)
     
     resultScreen.Visible = true
     
-    -- Animate in
-    container.Position = UDim2.new(0.5, -250, -0.5, 0)
+    -- Animate in (using AnchorPoint 0.5, 0.5 for true center)
+    container.AnchorPoint = Vector2.new(0.5, 0.5)
+    container.Position = UDim2.new(0.5, 0, -0.3, 0)  -- Start above screen
     TweenService:Create(container, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-        Position = UDim2.new(0.5, -250, 0.5, -200)
+        Position = UDim2.new(0.5, 0, 0.5, 0)  -- Animate to exact center
     }):Play()
 end
 
@@ -751,7 +878,7 @@ hideResultScreen = function()
     local container = resultScreen:FindFirstChild("Container")
     if container then
         TweenService:Create(container, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-            Position = UDim2.new(0.5, -250, 1.5, 0)
+            Position = UDim2.new(0.5, 0, 1.5, 0)  -- Animate out to below screen
         }):Play()
     end
     

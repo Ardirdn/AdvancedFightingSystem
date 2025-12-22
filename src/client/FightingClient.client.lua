@@ -183,6 +183,180 @@ local function loadAnimations()
 end
 
 -- ============================================
+-- DAMAGE NUMBER POPUP
+-- ============================================
+
+local function showDamageNumber(targetCharacter, damage)
+    if not targetCharacter then return end
+    
+    local head = targetCharacter:FindFirstChild("Head")
+    if not head then return end
+    
+    -- Create BillboardGui for the damage number
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "DamageNumber"
+    billboard.Size = UDim2.new(8, 0, 4, 0) -- Very big size in studs
+    billboard.StudsOffset = Vector3.new(math.random(-2, 2), 4 + math.random() * 2, math.random(-1, 1)) -- Random position, higher up
+    billboard.AlwaysOnTop = true
+    billboard.MaxDistance = 200 -- Visible from very far away
+    billboard.Parent = head
+    
+    -- Create the damage text
+    local damageLabel = Instance.new("TextLabel")
+    damageLabel.Name = "DamageText"
+    damageLabel.Size = UDim2.new(1, 0, 1, 0)
+    damageLabel.BackgroundTransparency = 1
+    damageLabel.Font = Enum.Font.GothamBlack
+    damageLabel.TextColor3 = Color3.fromRGB(255, 50, 50) -- Red color
+    damageLabel.TextStrokeColor3 = Color3.fromRGB(50, 0, 0)
+    damageLabel.TextStrokeTransparency = 0
+    damageLabel.TextScaled = true -- Scale text to fit
+    damageLabel.Text = "-" .. tostring(damage)
+    damageLabel.Parent = billboard
+    
+    -- Animate: float up and fade out
+    local startOffset = billboard.StudsOffset
+    local endOffset = startOffset + Vector3.new(0, 4, 0)
+    local startSize = billboard.Size
+    
+    task.spawn(function()
+        local duration = 1.2
+        local startTime = tick()
+        
+        while tick() - startTime < duration do
+            local progress = (tick() - startTime) / duration
+            local easedProgress = 1 - (1 - progress) * (1 - progress) -- Ease out
+            
+            -- Float up
+            billboard.StudsOffset = startOffset:Lerp(endOffset, easedProgress)
+            
+            -- Fade out (last 40% of animation)
+            if progress > 0.6 then
+                local fadeProgress = (progress - 0.6) / 0.4
+                damageLabel.TextTransparency = fadeProgress
+                damageLabel.TextStrokeTransparency = fadeProgress
+            end
+            
+            -- Scale down the billboard slightly
+            local scaleFactor = 1 - (0.3 * easedProgress)
+            billboard.Size = UDim2.new(startSize.X.Scale * scaleFactor, 0, startSize.Y.Scale * scaleFactor, 0)
+            
+            task.wait()
+        end
+        
+        billboard:Destroy()
+    end)
+end
+
+-- ============================================
+-- SOUND SYSTEM (with preloading and cooldown)
+-- ============================================
+
+local SoundService = game:GetService("SoundService")
+local ContentProvider = game:GetService("ContentProvider")
+
+-- Preloaded sound instances
+local preloadedSounds = {
+    Punch = {},
+    HeavyPunch = {},
+}
+local soundsPreloaded = false
+local lastSoundTime = 0
+local SOUND_COOLDOWN = 0.5 -- 0.5 second cooldown between sounds
+
+-- Preload all sounds at match start
+local function preloadAllSounds()
+    if soundsPreloaded then return end
+    
+    print("🔊 [Sound] Preloading punch sounds...")
+    
+    -- Create sound instances for punch sounds
+    if FightingConfig.Sounds.Punch then
+        for i, soundId in ipairs(FightingConfig.Sounds.Punch) do
+            local sound = Instance.new("Sound")
+            sound.SoundId = soundId
+            sound.Volume = FightingConfig.Sounds.PunchVolume or 0.8
+            sound.Parent = SoundService
+            preloadedSounds.Punch[i] = sound
+        end
+    end
+    
+    -- Create sound instances for heavy punch sounds
+    if FightingConfig.Sounds.HeavyPunch then
+        for i, soundId in ipairs(FightingConfig.Sounds.HeavyPunch) do
+            local sound = Instance.new("Sound")
+            sound.SoundId = soundId
+            sound.Volume = FightingConfig.Sounds.HeavyPunchVolume or 1.0
+            sound.Parent = SoundService
+            preloadedSounds.HeavyPunch[i] = sound
+        end
+    end
+    
+    -- Preload all sound assets
+    local assetsToPreload = {}
+    for _, sound in ipairs(preloadedSounds.Punch) do
+        table.insert(assetsToPreload, sound)
+    end
+    for _, sound in ipairs(preloadedSounds.HeavyPunch) do
+        table.insert(assetsToPreload, sound)
+    end
+    
+    ContentProvider:PreloadAsync(assetsToPreload)
+    soundsPreloaded = true
+    print("🔊 [Sound] All sounds preloaded!")
+end
+
+local function playHitSound(attackType)
+    -- Check cooldown
+    local currentTime = tick()
+    if currentTime - lastSoundTime < SOUND_COOLDOWN then
+        return -- Skip if still in cooldown
+    end
+    lastSoundTime = currentTime
+    
+    -- Pick sound list based on attack type
+    local soundList
+    if attackType == "Heavy" then
+        soundList = preloadedSounds.HeavyPunch
+    else
+        soundList = preloadedSounds.Punch
+    end
+    
+    if not soundList or #soundList == 0 then return end
+    
+    -- Pick random preloaded sound and play
+    local randomIndex = math.random(1, #soundList)
+    local sound = soundList[randomIndex]
+    
+    if sound and not sound.IsPlaying then
+        sound:Play()
+    else
+        -- If sound is playing, try another random one
+        for i = 1, #soundList do
+            local altSound = soundList[((randomIndex + i - 1) % #soundList) + 1]
+            if altSound and not altSound.IsPlaying then
+                altSound:Play()
+                break
+            end
+        end
+    end
+end
+
+local function playResultSound(isWin)
+    local soundId = isWin and FightingConfig.Sounds.Win or FightingConfig.Sounds.Lose
+    if not soundId then return end
+    
+    local sound = Instance.new("Sound")
+    sound.SoundId = soundId
+    sound.Volume = FightingConfig.Sounds.WinLoseVolume or 0.7
+    sound.Parent = SoundService
+    sound:Play()
+    sound.Ended:Connect(function()
+        sound:Destroy()
+    end)
+end
+
+-- ============================================
 -- COMBAT ACTIONS
 -- ============================================
 
@@ -262,6 +436,8 @@ local function performLightAttack()
         local windupTime = attackTrack.Length * 0.3
         task.delay(windupTime, function()
             if isRoundActive then
+                -- Play hit sound locally (no delay)
+                playHitSound("Light", nil)
                 DealDamageEvent:FireServer("Light", comboStep)
             end
         end)
@@ -328,6 +504,8 @@ local function performHeavyAttack()
         -- Charge time before dealing damage
         task.delay(config.ChargeTime, function()
             if isRoundActive then
+                -- Play hit sound locally (no delay)
+                playHitSound("Heavy", nil)
                 DealDamageEvent:FireServer("Heavy", 0)
             end
         end)
@@ -610,7 +788,7 @@ local shakeAmplitude = 0   -- Studs - how far camera moves
 local shakeFrequency = 0   -- Hz - oscillations per second  
 local shakeDuration = 0    -- Seconds
 local shakeZoomAmount = 0  -- Zoom in amount
-local originalFOV = 70     -- Default FOV
+local BASE_FOV = 70        -- Base FOV (constant, never changes)
 
 -- Shake update function bound to RenderStep
 local function updateCameraShake()
@@ -620,8 +798,8 @@ local function updateCameraShake()
     
     if elapsed >= shakeDuration then
         isShaking = false
-        -- Restore FOV smoothly
-        TweenService:Create(Camera, TweenInfo.new(0.15), {FieldOfView = originalFOV}):Play()
+        -- Restore FOV to base
+        TweenService:Create(Camera, TweenInfo.new(0.15), {FieldOfView = BASE_FOV}):Play()
         RunService:UnbindFromRenderStep("FightingCameraShake")
         return
     end
@@ -643,9 +821,9 @@ local function updateCameraShake()
     local shakeOffset = Vector3.new(offsetX, offsetY, 0)
     Camera.CFrame = Camera.CFrame * CFrame.new(shakeOffset)
     
-    -- Apply zoom effect (lower FOV = zoom in)
+    -- Apply zoom effect (lower FOV = zoom in) - FROM BASE, not current
     if shakeZoomAmount > 0 then
-        Camera.FieldOfView = originalFOV - currentZoom
+        Camera.FieldOfView = BASE_FOV - currentZoom
     end
 end
 
@@ -656,7 +834,7 @@ local function cameraShake(amplitude, frequency, duration, zoomAmount, isHitEffe
     shakeDuration = duration
     shakeZoomAmount = zoomAmount or 0
     shakeStartTime = tick()
-    originalFOV = Camera.FieldOfView
+    -- DON'T read from Camera.FieldOfView - use BASE_FOV constant
     
     print("📷 [SHAKE] Started: amp=" .. amplitude .. ", freq=" .. frequency .. "Hz, dur=" .. duration .. "s, zoom=" .. (zoomAmount or 0))
     
@@ -857,10 +1035,17 @@ local dodgeButton = nil
 local function createActionButtons()
     local playerGui = Player:WaitForChild("PlayerGui")
     
-    -- Check if already exists
-    if playerGui:FindFirstChild("FightingActionButtons") then
-        playerGui.FightingActionButtons:Destroy()
+    -- Check if already exists - destroy to prevent duplicates
+    local existingUI = playerGui:FindFirstChild("FightingActionButtons")
+    if existingUI then
+        existingUI:Destroy()
     end
+    
+    -- Reset button references
+    attackButton = nil
+    heavyButton = nil
+    blockButton = nil
+    dodgeButton = nil
     
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name = "FightingActionButtons"
@@ -876,187 +1061,187 @@ local function createActionButtons()
     local buttonsContainer = Instance.new("Frame")
     buttonsContainer.Name = "ButtonsContainer"
     buttonsContainer.Size = UDim2.new(0, 200, 0, 200)
-    buttonsContainer.Position = UDim2.new(1, -220, 1, -280)
+    buttonsContainer.Position = UDim2.new(1, -20, 0.5, 0)
+    buttonsContainer.AnchorPoint = Vector2.new(1, 0.5)
     buttonsContainer.BackgroundTransparency = 1
     buttonsContainer.Parent = screenGui
     
-    -- Button template function
-    local function createButton(name, position, size, text, color, icon)
-        local button = Instance.new("TextButton")
-        button.Name = name
-        button.Size = size or UDim2.new(0, 75, 0, 75)
-        button.Position = position
-        button.BackgroundColor3 = color or Color3.fromRGB(50, 50, 60)
-        button.BackgroundTransparency = 0.2
-        button.BorderSizePixel = 0
-        button.Text = ""
-        button.AutoButtonColor = false
-        button.Parent = buttonsContainer
+    -- Add UIListLayout for vertical stacking
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Padding = UDim.new(0, 8)
+    listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+    listLayout.Parent = buttonsContainer
+    
+    -- Check if should show clickable buttons (mobile OR debug enabled on PC)
+    local showClickableButtons = isMobile or (FightingConfig.Debug and FightingConfig.Debug.ShowButtonsOnPC)
+    
+    if showClickableButtons then
+        -- ============================================
+        -- MOBILE/DEBUG: Large clickable action buttons
+        -- ============================================
+        buttonsContainer.Size = UDim2.new(0, 220, 0, 300)
+        buttonsContainer.Position = UDim2.new(1, -20, 1, -320)
+        buttonsContainer.AnchorPoint = Vector2.new(1, 0)
+        listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
         
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(0, 15)
-        corner.Parent = button
-        
-        -- Inner shadow/glow effect
-        local stroke = Instance.new("UIStroke")
-        stroke.Color = Color3.fromRGB(255, 255, 255)
-        stroke.Transparency = 0.7
-        stroke.Thickness = 2
-        stroke.Parent = button
-        
-        -- Icon/Text label
-        local label = Instance.new("TextLabel")
-        label.Name = "Label"
-        label.Size = UDim2.new(1, 0, 0.6, 0)
-        label.Position = UDim2.new(0, 0, 0.2, 0)
-        label.BackgroundTransparency = 1
-        label.Font = Enum.Font.GothamBlack
-        label.TextColor3 = Color3.fromRGB(255, 255, 255)
-        label.TextSize = 14
-        label.Text = text
-        label.TextStrokeTransparency = 0.5
-        label.Parent = button
-        
-        -- Keybind hint (for PC)
-        if not isMobile then
-            local keybind = Instance.new("TextLabel")
-            keybind.Name = "Keybind"
-            keybind.Size = UDim2.new(1, 0, 0.25, 0)
-            keybind.Position = UDim2.new(0, 0, 0.75, 0)
-            keybind.BackgroundTransparency = 1
-            keybind.Font = Enum.Font.Gotham
-            keybind.TextColor3 = Color3.fromRGB(180, 180, 180)
-            keybind.TextSize = 10
-            keybind.Text = icon or ""
-            keybind.Parent = button
+        local function createMobileButton(name, text, color, layoutOrder)
+            local button = Instance.new("TextButton")
+            button.Name = name
+            button.Size = UDim2.new(1, 0, 0, 65)
+            button.LayoutOrder = layoutOrder
+            button.BackgroundColor3 = color
+            button.BackgroundTransparency = 0.15
+            button.BorderSizePixel = 0
+            button.Text = ""
+            button.AutoButtonColor = false
+            button.Parent = buttonsContainer
+            
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(0, 12)
+            corner.Parent = button
+            
+            local stroke = Instance.new("UIStroke")
+            stroke.Color = Color3.fromRGB(255, 255, 255)
+            stroke.Transparency = 0.6
+            stroke.Thickness = 2
+            stroke.Parent = button
+            
+            local label = Instance.new("TextLabel")
+            label.Size = UDim2.new(1, 0, 1, 0)
+            label.BackgroundTransparency = 1
+            label.Font = Enum.Font.GothamBlack
+            label.TextColor3 = Color3.fromRGB(255, 255, 255)
+            label.TextScaled = true
+            label.Text = text
+            label.TextStrokeTransparency = 0.3
+            label.Parent = button
+            
+            local textConstraint = Instance.new("UITextSizeConstraint")
+            textConstraint.MaxTextSize = 28
+            textConstraint.MinTextSize = 14
+            textConstraint.Parent = label
+            
+            return button
         end
         
-        -- Press animation
-        button.MouseButton1Down:Connect(function()
-            TweenService:Create(button, TweenInfo.new(0.1), {
-                Size = UDim2.new(0, size.X.Offset - 8, 0, size.Y.Offset - 8),
-                BackgroundTransparency = 0.1
-            }):Play()
-        end)
+        attackButton = createMobileButton("AttackButton", "PUNCH", Color3.fromRGB(200, 60, 60), 1)
+        heavyButton = createMobileButton("HeavyButton", "HEAVY", Color3.fromRGB(230, 130, 40), 2)
+        blockButton = createMobileButton("BlockButton", "BLOCK", Color3.fromRGB(60, 130, 200), 3)
+        dodgeButton = createMobileButton("DodgeButton", "DODGE", Color3.fromRGB(60, 180, 80), 4)
         
-        button.MouseButton1Up:Connect(function()
-            TweenService:Create(button, TweenInfo.new(0.1), {
-                Size = size,
-                BackgroundTransparency = 0.2
-            }):Play()
-        end)
+    else
+        -- ============================================
+        -- PC: Info-only keybind display (non-clickable)
+        -- ============================================
+        buttonsContainer.Size = UDim2.new(0, 160, 0, 180)
         
-        button.MouseLeave:Connect(function()
-            TweenService:Create(button, TweenInfo.new(0.1), {
-                Size = size,
-                BackgroundTransparency = 0.2
-            }):Play()
-        end)
+        local function createKeybindInfo(keyText, actionText, color, layoutOrder)
+            local frame = Instance.new("Frame")
+            frame.Name = actionText
+            frame.Size = UDim2.new(1, 0, 0, 38)
+            frame.LayoutOrder = layoutOrder
+            frame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+            frame.BackgroundTransparency = 0.3
+            frame.BorderSizePixel = 0
+            frame.Parent = buttonsContainer
+            
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(0, 8)
+            corner.Parent = frame
+            
+            -- Key badge
+            local keyBadge = Instance.new("Frame")
+            keyBadge.Size = UDim2.new(0, 55, 0, 28)
+            keyBadge.Position = UDim2.new(0, 5, 0.5, 0)
+            keyBadge.AnchorPoint = Vector2.new(0, 0.5)
+            keyBadge.BackgroundColor3 = color
+            keyBadge.BorderSizePixel = 0
+            keyBadge.Parent = frame
+            
+            local badgeCorner = Instance.new("UICorner")
+            badgeCorner.CornerRadius = UDim.new(0, 6)
+            badgeCorner.Parent = keyBadge
+            
+            local keyLabel = Instance.new("TextLabel")
+            keyLabel.Size = UDim2.new(1, 0, 1, 0)
+            keyLabel.BackgroundTransparency = 1
+            keyLabel.Font = Enum.Font.GothamBlack
+            keyLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+            keyLabel.TextScaled = true
+            keyLabel.Text = keyText
+            keyLabel.Parent = keyBadge
+            
+            local keyConstraint = Instance.new("UITextSizeConstraint")
+            keyConstraint.MaxTextSize = 14
+            keyConstraint.MinTextSize = 8
+            keyConstraint.Parent = keyLabel
+            
+            -- Action name
+            local actionLabel = Instance.new("TextLabel")
+            actionLabel.Size = UDim2.new(0, 85, 1, 0)
+            actionLabel.Position = UDim2.new(0, 65, 0, 0)
+            actionLabel.BackgroundTransparency = 1
+            actionLabel.Font = Enum.Font.GothamBold
+            actionLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+            actionLabel.TextScaled = true
+            actionLabel.TextXAlignment = Enum.TextXAlignment.Left
+            actionLabel.Text = actionText
+            actionLabel.Parent = frame
+            
+            local actionConstraint = Instance.new("UITextSizeConstraint")
+            actionConstraint.MaxTextSize = 16
+            actionConstraint.MinTextSize = 10
+            actionConstraint.Parent = actionLabel
+            
+            return frame
+        end
         
-        return button
+        createKeybindInfo("LMB", "Attack", Color3.fromRGB(180, 60, 60), 1)
+        createKeybindInfo("RMB", "Heavy", Color3.fromRGB(200, 120, 40), 2)
+        createKeybindInfo("F", "Block", Color3.fromRGB(60, 130, 180), 3)
+        createKeybindInfo("SPACE", "Dodge", Color3.fromRGB(60, 160, 80), 4)
     end
     
-    -- Attack Button (Large, center-right) - Left Click
-    attackButton = createButton(
-        "AttackButton",
-        UDim2.new(0.5, -45, 0.5, -45),
-        UDim2.new(0, 90, 0, 90),
-        "PUNCH",
-        Color3.fromRGB(220, 70, 70),
-        "[LMB]"
-    )
+    -- Connect button events (when clickable buttons are shown)
+    if showClickableButtons and attackButton then
+        attackButton.MouseButton1Click:Connect(function()
+            if isRoundActive then performLightAttack() end
+        end)
+    end
     
-    attackButton.MouseButton1Click:Connect(function()
-        print("👊 [DEBUG] Attack button clicked!")
-        if isRoundActive then
-            performLightAttack()
-        end
-    end)
+    if showClickableButtons and heavyButton then
+        heavyButton.MouseButton1Click:Connect(function()
+            if isRoundActive then performHeavyAttack() end
+        end)
+    end
     
-    -- Heavy Attack Button (Top) - Alt + Left Click
-    heavyButton = createButton(
-        "HeavyButton",
-        UDim2.new(0.5, -35, 0, 0),
-        UDim2.new(0, 70, 0, 70),
-        "HEAVY",
-        Color3.fromRGB(255, 140, 50),
-        "[Alt+LMB]"
-    )
+    if showClickableButtons and blockButton then
+        blockButton.MouseButton1Down:Connect(function()
+            if isRoundActive then startBlock() end
+        end)
+        blockButton.MouseButton1Up:Connect(function()
+            stopBlock()
+        end)
+    end
     
-    heavyButton.MouseButton1Click:Connect(function()
-        print("💪 [DEBUG] Heavy attack button clicked!")
-        if isRoundActive then
-            performHeavyAttack()
-        end
-    end)
-    
-    -- Block Button (Left) - Right Click (hold)
-    blockButton = createButton(
-        "BlockButton",
-        UDim2.new(0, 0, 0.5, -35),
-        UDim2.new(0, 70, 0, 70),
-        "BLOCK",
-        Color3.fromRGB(70, 140, 220),
-        "[RMB]"
-    )
-    
-    blockButton.MouseButton1Down:Connect(function()
-        print("🛡️ [DEBUG] Block started!")
-        if isRoundActive then
-            startBlock()
-        end
-    end)
-    
-    blockButton.MouseButton1Up:Connect(function()
-        print("🛡️ [DEBUG] Block ended!")
-        stopBlock()
-    end)
-    
-    -- Also handle touch end for mobile
-    blockButton.TouchLongPress:Connect(function()
-        if isRoundActive then
-            startBlock()
-        end
-    end)
-    
-    -- Dodge Button (Bottom) - Space + Direction
-    dodgeButton = createButton(
-        "DodgeButton",
-        UDim2.new(0.5, -35, 1, -70),
-        UDim2.new(0, 70, 0, 70),
-        "DODGE",
-        Color3.fromRGB(80, 200, 120),
-        "[Space+Dir]"
-    )
-    
-    dodgeButton.MouseButton1Click:Connect(function()
-        print("💨 [DEBUG] Dodge button clicked!")
-        if isRoundActive then
-            -- Default to backward dodge, or use current movement direction
-            local direction = "Backward"
-            for keyCode, dir in pairs(movementKeys) do
-                if pressedKeys[keyCode] then
-                    direction = dir
-                    break
+    if showClickableButtons and dodgeButton then
+        dodgeButton.MouseButton1Click:Connect(function()
+            if isRoundActive then
+                local direction = "Backward"
+                for keyCode, dir in pairs(movementKeys) do
+                    if pressedKeys[keyCode] then
+                        direction = dir
+                        break
+                    end
                 end
+                performDodge(direction)
             end
-            performDodge(direction)
-        end
-    end)
+        end)
+    end
     
-    -- Instructions label (top of container)
-    local instructionLabel = Instance.new("TextLabel")
-    instructionLabel.Name = "Instructions"
-    instructionLabel.Size = UDim2.new(1, 40, 0, 25)
-    instructionLabel.Position = UDim2.new(0, -20, 0, -35)
-    instructionLabel.BackgroundTransparency = 1
-    instructionLabel.Font = Enum.Font.GothamMedium
-    instructionLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    instructionLabel.TextSize = 12
-    instructionLabel.Text = "⚔️ COMBAT ACTIONS"
-    instructionLabel.Parent = buttonsContainer
-    
-    print("🎮 [FightingClient] Action buttons created (visible on all platforms)")
+    local modeText = showClickableButtons and "CLICKABLE" or "INFO-ONLY"
+    print("🎮 [FightingClient] Action buttons created (" .. modeText .. " mode)")
 end
 
 local function showActionButtons()
@@ -1084,6 +1269,9 @@ StartMatchEvent.OnClientEvent:Connect(function(data)
     isInMatch = true
     mySide = data.Side
     
+    -- Preload sounds for instant playback
+    preloadAllSounds()
+    
     -- Find opponent
     currentOpponent = Players:FindFirstChild(data.OpponentName)
     
@@ -1109,15 +1297,28 @@ EndMatchEvent.OnClientEvent:Connect(function(data)
     isRoundActive = false
     currentOpponent = nil
     
+    -- Stop death animation if playing
+    if _G.currentDeathAnimation then
+        _G.currentDeathAnimation:Stop()
+        _G.currentDeathAnimation = nil
+    end
+    
+    -- Play win/lose sound
+    local didWin = (data.Winner == Player.Name)
+    playResultSound(didWin)
+    
     -- Stop camera
     stopFightCamera()
     
-    -- Re-enable jumping
+    -- Re-enable jumping and movement
     if Humanoid then
         local originalJump = Humanoid:GetAttribute("OriginalJumpPower") or 50
         Humanoid.JumpPower = originalJump
         Humanoid.JumpHeight = 7.2  -- Default Roblox jump height
-        print("✅ [FightingClient] Jump re-enabled")
+        Humanoid.WalkSpeed = 16    -- Default walk speed
+        Humanoid.AutoRotate = true  -- Re-enable auto rotate
+        Humanoid.PlatformStand = false  -- Re-enable control
+        print("✅ [FightingClient] Movement re-enabled")
     end
     
     -- Hide action buttons
@@ -1131,6 +1332,20 @@ RoundStartEvent.OnClientEvent:Connect(function(data)
     print("========================================")
     print("🔔 [FightingClient] Round", data.RoundNumber, "starting!")
     print("========================================")
+    
+    -- Stop death animation if playing
+    if _G.currentDeathAnimation then
+        _G.currentDeathAnimation:Stop()
+        _G.currentDeathAnimation = nil
+    end
+    
+    -- Restore movement and rotation
+    if Humanoid then
+        Humanoid.WalkSpeed = 16  -- Default walk speed
+        Humanoid.JumpPower = 50  -- Default jump power
+        Humanoid.AutoRotate = true  -- Re-enable auto rotate
+        Humanoid.PlatformStand = false  -- Re-enable control
+    end
     
     isRoundActive = true
     comboStep = 1
@@ -1146,6 +1361,9 @@ RoundStartEvent.OnClientEvent:Connect(function(data)
     print("   - myStamina:", myStamina)
     print("   - myHealth:", myHealth)
     
+    -- Reset camera FOV to base value (fix zoom accumulation)
+    Camera.FieldOfView = BASE_FOV
+    
     -- Start fight camera
     startFightCamera()
     
@@ -1159,6 +1377,36 @@ RoundEndEvent.OnClientEvent:Connect(function(data)
     
     -- Stop blocking
     stopBlock()
+    
+    -- Check if local player lost this round
+    local didPlayerWin = (data.WinnerName == Player.Name)
+    
+    -- If player lost, play death animation and lock movement
+    if not didPlayerWin then
+        -- Stop all combat animations first
+        stopAllCombatAnimations()
+        
+        -- Load and play death animation in loop
+        if Animator and FightingConfig.Animations and FightingConfig.Animations.DeathAnimation then
+            local deathAnim = Instance.new("Animation")
+            deathAnim.AnimationId = FightingConfig.Animations.DeathAnimation
+            local deathTrack = Animator:LoadAnimation(deathAnim)
+            deathTrack.Looped = true
+            deathTrack.Priority = Enum.AnimationPriority.Action4
+            deathTrack:Play()
+            
+            -- Store for cleanup on next round
+            _G.currentDeathAnimation = deathTrack
+        end
+        
+        -- Completely lock movement and rotation
+        if Humanoid then
+            Humanoid.WalkSpeed = 0
+            Humanoid.JumpPower = 0
+            Humanoid.AutoRotate = false  -- Disable auto rotate
+            Humanoid.PlatformStand = true  -- Lock character completely
+        end
+    end
 end)
 
 UpdateStatsEvent.OnClientEvent:Connect(function(data)
@@ -1183,22 +1431,39 @@ UpdateStatsEvent.OnClientEvent:Connect(function(data)
     }
 end)
 
--- Handle being hit
+-- Handle damage events (both global for popup and local for animation)
 DealDamageEvent.OnClientEvent:Connect(function(hitData)
-    print("💥 [FightingClient] Got hit! Damage:", hitData.Damage)
-    
-    -- Play hit animation
-    if hitData.AttackType == "Heavy" then
-        local hitTrack = animationTracks.HeavyHit
-        if hitTrack then
-            stopAllCombatAnimations()
-            hitTrack:Play()
+    -- Global event - show damage number popup on defender (visible to everyone)
+    if hitData.DefenderName and not hitData.IsLocalHit then
+        -- Find the defender's character
+        local defenderPlayer = Players:FindFirstChild(hitData.DefenderName)
+        if defenderPlayer and defenderPlayer.Character then
+            showDamageNumber(defenderPlayer.Character, hitData.Damage)
+            -- Attacker plays sound locally in performLightAttack/performHeavyAttack
         end
-    else
-        local hitTrack = animationTracks.Hit[hitData.ComboIndex] or animationTracks.Hit[1]
-        if hitTrack then
-            stopAllCombatAnimations()
-            hitTrack:Play()
+        return -- Don't process further for global events
+    end
+    
+    -- Local event - this is the defender receiving their own hit event
+    if hitData.IsLocalHit then
+        print("💥 [FightingClient] Got hit! Damage:", hitData.Damage)
+        
+        -- Play hit sound for victim (so they also hear it)
+        playHitSound(hitData.AttackType)
+        
+        -- Play hit animation (only for defender)
+        if hitData.AttackType == "Heavy" then
+            local hitTrack = animationTracks.HeavyHit
+            if hitTrack then
+                stopAllCombatAnimations()
+                hitTrack:Play()
+            end
+        else
+            local hitTrack = animationTracks.Hit[hitData.ComboIndex] or animationTracks.Hit[1]
+            if hitTrack then
+                stopAllCombatAnimations()
+                hitTrack:Play()
+            end
         end
     end
 end)

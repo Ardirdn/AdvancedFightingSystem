@@ -11,7 +11,7 @@ local FightingConfig = {}
 -- ============================================
 FightingConfig.Match = {
     -- Jumlah ronde per match (bisa 3, 5, atau berapapun)
-    RoundsPerMatch = 3,
+    RoundsPerMatch = 5,
     
     -- Countdown sebelum match dimulai (detik)
     CountdownBeforeStart = 3,
@@ -30,18 +30,27 @@ FightingConfig.Match = {
 }
 
 -- ============================================
+-- DEBUG / DEVELOPMENT CONFIGURATION
+-- ============================================
+FightingConfig.Debug = {
+    -- Set true to show clickable action buttons on PC (for testing)
+    -- Set false to only show keybind info on PC (production)
+    ShowButtonsOnPC = false,
+}
+
+-- ============================================
 -- PLAYER STATS CONFIGURATION
 -- ============================================
 FightingConfig.Stats = {
     -- Health
     MaxHealth = 100,
     StartingHealth = 100,
-    HealthRegenPerSecond = 0, -- Tidak ada regen health saat fight
+    HealthRegenPerSecond = 1, -- Tidak ada regen health saat fight
     
     -- Stamina
     MaxStamina = 100,
     StartingStamina = 100,
-    StaminaRegenPerSecond = 1, -- 1 stamina per detik, 100 detik untuk full
+    StaminaRegenPerSecond = 5, -- 1 stamina per detik, 100 detik untuk full
 }
 
 -- ============================================
@@ -50,8 +59,8 @@ FightingConfig.Stats = {
 FightingConfig.Combat = {
     -- Block
     Block = {
-        StaminaCost = 30, -- Minimal stamina untuk block
-        StaminaPerBlock = 30, -- Stamina berkurang saat berhasil block
+        StaminaCost = 10, -- Minimal stamina untuk block
+        StaminaPerBlock = 15, -- Stamina berkurang saat berhasil block
         DamageReduction = 1.0, -- 100% damage di-block jika stamina cukup
         CooldownAfterBlock = 0.5, -- Delay setelah block sebelum bisa aksi lain
     },
@@ -59,9 +68,9 @@ FightingConfig.Combat = {
     -- Dodge
     Dodge = {
         StaminaCost = 10,
-        Distance = 10, -- Jarak dodge dalam studs
-        Duration = 0.3, -- Durasi animasi dodge (detik)
-        InvincibilityFrames = 0.2, -- Durasi tidak bisa di-hit saat dodge
+        Distance = 15, -- Jarak dodge dalam studs
+        Duration = 0.5, -- Durasi animasi dodge (detik)
+        InvincibilityFrames = 0.3, -- Durasi tidak bisa di-hit saat dodge
         Cooldown = 0.5,
     },
     
@@ -77,7 +86,7 @@ FightingConfig.Combat = {
     
     -- Heavy Attack
     HeavyAttack = {
-        StaminaCost = 15,
+        StaminaCost = 7,
         Damage = 10, -- Damage lebih besar
         Range = 6,
         Cooldown = 2.0, -- Cooldown lebih lama
@@ -94,13 +103,13 @@ FightingConfig.Camera = {
     -- X = camera offset to RIGHT (positive = player on LEFT of screen)
     -- Y = camera height above player
     -- Z = camera distance behind player
-    FightCameraOffset = Vector3.new(5, 2, 6), -- Player more on LEFT, closer camera
+    FightCameraOffset = Vector3.new(7, 4, 8), -- Player more on LEFT, closer camera
     FightCameraDistance = 30, -- Max kamera zoom distance
-    CameraLerpSpeed = 0.35, -- Camera follow speed (higher = snappier, 0.1-0.5)
+    CameraLerpSpeed = 0.5, -- Camera follow speed (higher = snappier, 0.1-0.5)
     
     -- Player rotation lock
     LockPlayerRotation = true, -- Apakah player otomatis menghadap lawan?
-    PlayerRotationLerpSpeed = 0.12, -- Kecepatan rotasi player (lower = smoother, 0.05-0.2)
+    PlayerRotationLerpSpeed = 0.2, -- Kecepatan rotasi player (lower = smoother, 0.05-0.2)
     
     -- ============================================
     -- CAMERA SHAKE SETTINGS
@@ -129,6 +138,7 @@ FightingConfig.Camera = {
         Duration = 0.5,
         ZoomAmount = 0.5,  -- Subtle zoom saat block
     },
+    
     
     -- Shake saat MENYERANG (feedback untuk attacker)
     AttackShake = {
@@ -251,6 +261,51 @@ FightingConfig.Input = {
         HeavyAttackButtonPosition = UDim2.new(0.85, 0, 0.4, 0),
         DodgeButtonPosition = UDim2.new(0.75, 0, 0.7, 0),
     },
+}
+
+-- ============================================
+-- SOUND CONFIGURATION
+-- ============================================
+FightingConfig.Sounds = {
+    -- Normal punch sounds (random pick)
+    Punch = {
+        "rbxassetid://95639714351390",
+        "rbxassetid://104319149626413",
+        "rbxassetid://99850731928647",
+        "rbxassetid://92212123981337",
+        "rbxassetid://100179539712369",
+        "rbxassetid://71444041057068",
+        "rbxassetid://73178141341033",
+        "rbxassetid://89568824426212",
+        "rbxassetid://88773757506723",
+        "rbxassetid://119118595949713",
+    },
+    
+    -- Heavy punch sounds (random pick)
+    HeavyPunch = {
+        "rbxassetid://79550887216632",
+        "rbxassetid://131862524334719",
+        "rbxassetid://94024592458813",
+        "rbxassetid://80533540636628",
+        "rbxassetid://134696843772118",
+    },
+    
+    -- Win/Lose sounds
+    Win = "rbxassetid://96210781050936",
+    Lose = "rbxassetid://92158718098402",
+    
+    -- Volume settings
+    PunchVolume = 0.8,
+    HeavyPunchVolume = 1.0,
+    WinLoseVolume = 0.7,
+}
+
+-- ============================================
+-- ANIMATION IDS
+-- ============================================
+FightingConfig.Animations = {
+    -- Death/KO animation (loop saat mati)
+    DeathAnimation = "rbxassetid://113898447009356",
 }
 
 -- ============================================

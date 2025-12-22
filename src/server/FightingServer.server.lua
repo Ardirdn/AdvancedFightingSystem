@@ -123,6 +123,9 @@ GetPlayerStatsFunc.Parent = FightingRemotes
 -- Active arenas and their states
 local arenaStates = {}
 
+-- Expose to _G for FightInfoScreen access
+_G.FightingArenaStates = arenaStates
+
 -- Player cooldowns
 local playerCooldowns = {}
 
@@ -277,6 +280,44 @@ local function updateInfoGui(arenaFolder, text)
 end
 
 -- ============================================
+-- PLAYER COLLISION CONTROL
+-- ============================================
+
+local PhysicsService = game:GetService("PhysicsService")
+
+-- Create collision group for fighters (run once)
+local function setupCollisionGroups()
+    pcall(function()
+        PhysicsService:RegisterCollisionGroup("FighterA")
+        PhysicsService:RegisterCollisionGroup("FighterB")
+        PhysicsService:CollisionGroupSetCollidable("FighterA", "FighterB", false)
+    end)
+end
+setupCollisionGroups()
+
+-- Set player to a collision group
+local function setPlayerCollisionGroup(player, groupName)
+    if not player or not player.Character then return end
+    
+    for _, part in pairs(player.Character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CollisionGroup = groupName
+        end
+    end
+end
+
+-- Reset player collision to default
+local function resetPlayerCollision(player)
+    if not player or not player.Character then return end
+    
+    for _, part in pairs(player.Character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CollisionGroup = "Default"
+        end
+    end
+end
+
+-- ============================================
 -- MATCH LOGIC
 -- ============================================
 
@@ -328,6 +369,10 @@ local function startMatch(arenaState)
     
     if fightPosA then teleportPlayerToPosition(playerA, fightPosA) end
     if fightPosB then teleportPlayerToPosition(playerB, fightPosB) end
+    
+    -- Set collision groups so players can pass through each other
+    setPlayerCollisionGroup(playerA, "FighterA")
+    setPlayerCollisionGroup(playerB, "FighterB")
     
     -- Notify clients
     StartMatchEvent:FireClient(playerA, {
@@ -518,43 +563,43 @@ function endMatch(arenaState, winner)
     
     print("🎉 [FightingServer] Match ended in", arena.Name, "-", (winner and winner.Name .. " wins!" or "Draw!"))
     
-    -- Teleport players out after result screen
-    task.delay(FightingConfig.UI.ResultScreenDuration, function()
-        local outPos = arena:FindFirstChild("OutPosition")
-        
-        if outPos then
-            if playerA and playerA.Character then
-                teleportPlayerToPosition(playerA, outPos)
-            end
-            if playerB and playerB.Character then
-                teleportPlayerToPosition(playerB, outPos)
-            end
+    -- Teleport players out immediately (no delay)
+    local outPos = arena:FindFirstChild("OutPosition")
+    
+    if outPos then
+        if playerA and playerA.Character then
+            teleportPlayerToPosition(playerA, outPos)
+            resetPlayerCollision(playerA)
         end
-        
-        -- Set cooldowns
-        if playerA then
-            playerCooldowns[playerA.UserId] = tick()
+        if playerB and playerB.Character then
+            teleportPlayerToPosition(playerB, outPos)
+            resetPlayerCollision(playerB)
         end
-        if playerB then
-            playerCooldowns[playerB.UserId] = tick()
-        end
-        
-        -- Clear fighter states
-        if playerA then activeFighters[playerA.UserId] = nil end
-        if playerB then activeFighters[playerB.UserId] = nil end
-        
-        -- Reset arena state
-        arenaState.PlayerA = nil
-        arenaState.PlayerB = nil
-        arenaState.Stats = {
-            PlayerA = { Hits = 0, Blocks = 0, DamageDealt = 0 },
-            PlayerB = { Hits = 0, Blocks = 0, DamageDealt = 0 },
-        }
-        
-        updateInfoGui(arena, "Waiting for players...")
-        updateStartPositionColor(arena, "StartPositionA", false)
-        updateStartPositionColor(arena, "StartPositionB", false)
-    end)
+    end
+    
+    -- Set cooldowns
+    if playerA then
+        playerCooldowns[playerA.UserId] = tick()
+    end
+    if playerB then
+        playerCooldowns[playerB.UserId] = tick()
+    end
+    
+    -- Clear fighter states
+    if playerA then activeFighters[playerA.UserId] = nil end
+    if playerB then activeFighters[playerB.UserId] = nil end
+    
+    -- Reset arena state
+    arenaState.PlayerA = nil
+    arenaState.PlayerB = nil
+    arenaState.Stats = {
+        PlayerA = { Hits = 0, Blocks = 0, DamageDealt = 0 },
+        PlayerB = { Hits = 0, Blocks = 0, DamageDealt = 0 },
+    }
+    
+    updateInfoGui(arena, "Waiting for players...")
+    updateStartPositionColor(arena, "StartPositionA", false)
+    updateStartPositionColor(arena, "StartPositionB", false)
 end
 
 -- ============================================
@@ -683,13 +728,26 @@ DealDamageEvent.OnServerEvent:Connect(function(attacker, attackType, comboIndex)
     
     -- Notify defender of hit (for hit animation)
     if actualDamage > 0 then
-        -- Fire to defender to play hit animation
-        local hitData = {
+        -- Fire to ALL clients for damage number popup (visible to everyone)
+        local hitDataForAll = {
             AttackType = attackType,
             ComboIndex = comboIndex,
             Damage = actualDamage,
+            DefenderName = defender.Name,  -- So clients know who got hit
+            IsLocalHit = false,
+            PlaySound = true,  -- Play sound on successful hit
         }
-        DealDamageEvent:FireClient(defender, hitData)
+        DealDamageEvent:FireAllClients(hitDataForAll)
+        
+        -- Fire to defender specifically for hit animation
+        local hitDataForDefender = {
+            AttackType = attackType,
+            ComboIndex = comboIndex,
+            Damage = actualDamage,
+            IsLocalHit = true,  -- Defender knows it's them
+            PlaySound = false,  -- Sound already played from global event
+        }
+        DealDamageEvent:FireClient(defender, hitDataForDefender)
     elseif wasBlocked then
         -- Fire block success event
         BlockEvent:FireClient(defender, { Success = true })

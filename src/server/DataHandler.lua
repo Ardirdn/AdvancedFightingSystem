@@ -137,6 +137,10 @@ function DataHandler.AddRoundWin(player, count)
     local data = DataHandler.GetData(player)
     if data then
         data.RoundsWin = data.RoundsWin + (count or 1)
+        -- Update OrderedDataStore for leaderboard
+        task.spawn(function()
+            DataHandler.UpdateLeaderboard(player, "RoundsWin", data.RoundsWin)
+        end)
         return data.RoundsWin
     end
     return 0
@@ -147,6 +151,10 @@ function DataHandler.AddMatchWin(player, count)
     local data = DataHandler.GetData(player)
     if data then
         data.MatchWin = data.MatchWin + (count or 1)
+        -- Update OrderedDataStore for leaderboard
+        task.spawn(function()
+            DataHandler.UpdateLeaderboard(player, "MatchWin", data.MatchWin)
+        end)
         return data.MatchWin
     end
     return 0
@@ -203,39 +211,97 @@ function DataHandler.AddDamageTaken(player, amount)
 end
 
 -- ============================================
--- LEADERBOARD FUNCTIONS
+-- LEADERBOARD FUNCTIONS (using OrderedDataStore)
 -- ============================================
 
--- Get top players by stat
+-- OrderedDataStores for leaderboard
+local MatchWinLeaderboard = DataStoreService:GetOrderedDataStore("FightingLeaderboard_MatchWin_v1")
+local RoundsWinLeaderboard = DataStoreService:GetOrderedDataStore("FightingLeaderboard_RoundsWin_v1")
+
+-- Update ordered datastore when stat changes
+function DataHandler.UpdateLeaderboard(player, statName, value)
+    if not player or not statName then return end
+    
+    local success, err = pcall(function()
+        if statName == "MatchWin" then
+            MatchWinLeaderboard:SetAsync(tostring(player.UserId), value)
+        elseif statName == "RoundsWin" then
+            RoundsWinLeaderboard:SetAsync(tostring(player.UserId), value)
+        end
+    end)
+    
+    if not success then
+        warn("❌ [DataHandler] Failed to update leaderboard:", err)
+    end
+end
+
+-- Get top players by stat (from OrderedDataStore - shows all players, not just online)
 function DataHandler.GetTopPlayers(statName, count)
     count = count or 10
     
     local leaderboard = {}
     
-    -- Get from cache (online players)
-    for userId, data in pairs(playerDataCache) do
-        local player = Players:GetPlayerByUserId(userId)
-        if player then
-            table.insert(leaderboard, {
-                UserId = userId,
-                Name = player.Name,
-                Value = data[statName] or 0,
-            })
+    -- Get OrderedDataStore based on stat
+    local orderedStore
+    if statName == "MatchWin" then
+        orderedStore = MatchWinLeaderboard
+    elseif statName == "RoundsWin" then
+        orderedStore = RoundsWinLeaderboard
+    else
+        -- Fallback to cache for other stats
+        for userId, data in pairs(playerDataCache) do
+            local player = Players:GetPlayerByUserId(userId)
+            if player then
+                table.insert(leaderboard, {
+                    UserId = userId,
+                    Name = player.Name,
+                    Value = data[statName] or 0,
+                })
+            end
         end
+        table.sort(leaderboard, function(a, b) return a.Value > b.Value end)
+        local result = {}
+        for i = 1, math.min(count, #leaderboard) do result[i] = leaderboard[i] end
+        return result
     end
     
-    -- Sort by value (descending)
-    table.sort(leaderboard, function(a, b)
-        return a.Value > b.Value
+    -- Get from OrderedDataStore
+    local success, pages = pcall(function()
+        return orderedStore:GetSortedAsync(false, count)
     end)
     
-    -- Return top entries
-    local result = {}
-    for i = 1, math.min(count, #leaderboard) do
-        result[i] = leaderboard[i]
+    if success and pages then
+        local data = pages:GetCurrentPage()
+        for rank, entry in ipairs(data) do
+            local userId = tonumber(entry.key)
+            local value = entry.value
+            
+            -- Try to get player name
+            local playerName = "Player_" .. tostring(userId)
+            local player = Players:GetPlayerByUserId(userId)
+            if player then
+                playerName = player.Name
+            else
+                -- Try to get username from cache or use UserId
+                local success2, name = pcall(function()
+                    return Players:GetNameFromUserIdAsync(userId)
+                end)
+                if success2 and name then
+                    playerName = name
+                end
+            end
+            
+            table.insert(leaderboard, {
+                UserId = userId,
+                Name = playerName,
+                Value = value,
+            })
+        end
+    else
+        warn("❌ [DataHandler] Failed to get leaderboard data")
     end
     
-    return result
+    return leaderboard
 end
 
 -- ============================================
