@@ -95,30 +95,59 @@ FightingConfig.Combat = {
         Cooldown = 1, -- Cooldown lebih lama
         ChargeTime = 0.5, -- Waktu charge sebelum attack
         BreakBlock = false, -- Apakah bisa break block?
+        
+        -- Slowmo saat berhasil hit
+        UseSlowmo = true,
+        SlowmoValue = 0.2, -- 20% dari kecepatan normal
+        SlowmoDuration = 2, -- Durasi slowmo dalam detik
     },
     
     -- Konfigurasi Dorongan (Pushback / Pushforward)
     PushMechanics = {
-        -- Attacker maju saat memukul
-        Attacker = {
-            Distance = 3.5,       -- Jarak maju (Studs)
-            Duration = 0.2,    -- Waktu tempuh dorongan
-            Delay = 0,       -- Jeda sebelum dorongan dimulai
+        LightAttack = {
+            -- Attacker maju saat memukul
+            Attacker = {
+                Distance = 3.5,       -- Jarak maju (Studs)
+                Duration = 0.2,    -- Waktu tempuh dorongan
+                Delay = 0,       -- Jeda sebelum dorongan dimulai
+            },
+            
+            -- Defender mundur saat dipukul (Normal)
+            DefenderNormal = {
+                Distance = 5,       -- Jarak mundur biasa
+                Duration = 0.08,    -- Waktu tempuh (lebih cepat agar tidak bertubrukan)
+                Delay = 0,          -- Langsung mundur tanpa delay
+            },
+            
+            -- Defender mundur saat dipukul di akhir combo (Hit ke-4)
+            DefenderFar = {
+                Distance = 8,      -- Jarak terpental belakangan
+                Duration = 0.1,     -- Waktu tempuh
+                Delay = 0,          -- Langsung mundur
+            },
         },
-        
-        -- Defender mundur saat dipukul (Normal)
-        DefenderNormal = {
-            Distance = 5,       -- Jarak mundur biasa
-            Duration = 0.08,    -- Waktu tempuh (lebih cepat agar tidak bertubrukan)
-            Delay = 0,          -- Langsung mundur tanpa delay
-        },
-        
-        -- Defender mundur saat dipukul di akhir combo (Hit ke-4)
-        DefenderFar = {
-            Distance = 8,      -- Jarak terpental belakangan
-            Duration = 0.1,     -- Waktu tempuh
-            Delay = 0,          -- Langsung mundur
-        },
+        HeavyAttack = {
+            -- Attacker maju saat memukul (Heavy)
+            Attacker = {
+                Distance = 5,
+                Duration = 0.3,
+                Delay = 0,
+            },
+            
+            -- Defender mundur saat dipukul (Normal Heavy)
+            DefenderNormal = {
+                Distance = 10,
+                Duration = 0.15,
+                Delay = 0,
+            },
+            
+            -- Defender mundur saat dipukul di akhir combo (Heavy Far)
+            DefenderFar = {
+                Distance = 15,
+                Duration = 0.2,
+                Delay = 0,
+            },
+        }
     },
 }
 
@@ -137,6 +166,20 @@ FightingConfig.Camera = {
     -- Field of View
     BaseFOV = 70,        -- FOV normal saat tidak fight
     FightFieldOfView = 35, -- FOV saat fight mode (lebih kecil = lebih cinematic)
+    
+    -- FOV Dip saat HIT (dinamis untuk light & heavy)
+    FOVDip = {
+        LightAttack = { Min = 2, Max = 5 },
+        HeavyAttack = { Min = 10, Max = 15 },
+    },
+    
+    -- Custom Camera untuk Heavy Attack Hit
+    CustomHitCamera = {
+        Enabled = true,              -- Berubah ke custom camera saat heavy attack hit
+        Offset = Vector3.new(0, 1.5, -4), -- Offset relatif terhadap target (contoh: di depan target melihat ke target)
+        LookAtTarget = true,         -- Selalu menatap ke HRP target
+        Duration = 0.8,              -- Berapa lama custom camera bertahan
+    },
     
     -- Player rotation lock
     LockPlayerRotation = true, -- Apakah player otomatis menghadap lawan?

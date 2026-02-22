@@ -283,7 +283,7 @@ HitDebugDummy.OnServerEvent:Connect(function(player, attackType, comboStep)
             pushDir          = Vector3.new(pushDir.X, 0, pushDir.Z).Unit
             
             local isFar = comboStep and comboStep % 4 == 0
-            local cfg = isFar and FightingConfig.Combat.PushMechanics.DefenderFar or FightingConfig.Combat.PushMechanics.DefenderNormal
+            local cfg = isFar and FightingConfig.Combat.PushMechanics[attackType .. "Attack"].DefenderFar or FightingConfig.Combat.PushMechanics[attackType .. "Attack"].DefenderNormal
             
             local maxDist    = cfg.Distance
             local duration   = cfg.Duration

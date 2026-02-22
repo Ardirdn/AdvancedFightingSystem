@@ -456,7 +456,7 @@ local function hitDebugDummy(attackType, comboStep)
         playHitParticles(debugDummy)  -- Spawn particles
         local sh = FightingConfig.Camera.AttackShake
         if _cameraShakeFn then   -- assigned later once cameraShake is defined
-            _cameraShakeFn(sh.Amplitude, sh.Frequency, sh.Duration, sh.ZoomAmount, false)
+            _cameraShakeFn(sh.Amplitude, sh.Frequency, sh.Duration, sh.ZoomAmount, false, attackType)
         end
 
         -- Tell server to register hit (shows HP on billboard)
@@ -470,10 +470,10 @@ end
 -- ATTACKER PUSH FORWARD
 -- ============================================
 -- Saat hit connect, attacker melaju 3 stud ke depan (ke arah musuh).
-local function pushAttackerForward()
+local function pushAttackerForward(attackType)
     if not HRP then return end
     task.spawn(function()
-        local cfg = FightingConfig.Combat.PushMechanics.Attacker
+        local cfg = FightingConfig.Combat.PushMechanics[attackType .. "Attack"].Attacker
         
         if cfg.Delay > 0 then
             task.wait(cfg.Delay)
@@ -558,7 +558,7 @@ local function performLightAttack()
         local windupTime = attackTrack.Length * 0.3
         task.delay(windupTime, function()
             playSoundEffect("Whoosh")
-            pushAttackerForward()
+            pushAttackerForward("Light")
             hitDebugDummy("Light", comboStep)
             if isRoundActive then
                 DealDamageEvent:FireServer("Light", comboStep)
@@ -646,7 +646,7 @@ local function performHeavyAttack()
         -- Charge / Delay time before dealing damage and pushforward
         task.delay(damageTime, function()
             playSoundEffect("Whoosh")
-            pushAttackerForward()
+            pushAttackerForward("Heavy")
             hitDebugDummy("Heavy", heavyComboStep)
             if isRoundActive then
                 DealDamageEvent:FireServer("Heavy", heavyComboStep)
@@ -788,6 +788,9 @@ local previousCameraCFrame = nil
 local previousCameraSubject = nil
 local previousAutoRotate = nil
 
+local customHitCameraActive = false
+local customHitCameraCFrame = CFrame.new()
+
 
 local function startFightCamera()
     if fightCameraActive then return end
@@ -827,6 +830,11 @@ local function startFightCamera()
     fightCameraConn = RunService.RenderStepped:Connect(function(dt)
         if not fightCameraActive then return end
         if not HRP or not HRP.Parent then return end
+        
+        if customHitCameraActive then
+            Camera.CFrame = customHitCameraCFrame
+            return
+        end
         
         -- Get opponent position for look-at
         local opponentPos = nil
@@ -991,13 +999,22 @@ local function updateCameraShake()
     Camera.CFrame = Camera.CFrame * CFrame.new(offsetX, offsetY, 0)
 end
 
-local function cameraShake(amplitude, frequency, duration, zoomAmount, isHitEffect)
+local function cameraShake(amplitude, frequency, duration, zoomAmount, isHitEffect, attackType)
     -- ── FOV PUNCH EFFECT ──────────────────────────────────────────────────────
     -- Quick FOV dip on every hit/attack for cinematic impact feel.
     -- Only active when fight camera is running; never alters BASE_FOV.
     if fightCameraActive then
         local fightFOV  = FightingConfig.Camera.FightFieldOfView or 60
-        local dipAmount = math.random(0, 1) == 0 and 2 or 5   -- random -5 or -10
+        
+        local minDip, maxDip = 2, 5
+        local fovCfg = FightingConfig.Camera.FOVDip
+        if attackType == "Heavy" and fovCfg and fovCfg.HeavyAttack then
+            minDip, maxDip = fovCfg.HeavyAttack.Min, fovCfg.HeavyAttack.Max
+        elseif fovCfg and fovCfg.LightAttack then
+            minDip, maxDip = fovCfg.LightAttack.Min, fovCfg.LightAttack.Max
+        end
+        
+        local dipAmount = math.random(minDip, maxDip)
         local dipFOV    = fightFOV - dipAmount
         local punchIn   = 0.06
         local springOut = duration * 0.8
@@ -1614,6 +1631,78 @@ UpdateStatsEvent.OnClientEvent:Connect(function(data)
     }
 end)
 
+local function triggerSlowmoAndCamera(hitData)
+    if hitData.AttackType ~= "Heavy" then return end
+    
+    local config = FightingConfig.Camera.CustomHitCamera
+    local hcConfig = FightingConfig.Combat.HeavyAttack
+    
+    -- Custom Hit Camera (Hanya untuk player yang bertarung)
+    if config and config.Enabled and fightCameraActive then
+        customHitCameraActive = true
+        
+        local defPlayer = Players:FindFirstChild(hitData.DefenderName)
+        local defHRP = defPlayer and defPlayer.Character and defPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local attPlayer = Players:FindFirstChild(hitData.AttackerName)
+        local attHRP = attPlayer and attPlayer.Character and attPlayer.Character:FindFirstChild("HumanoidRootPart")
+        
+        if defHRP and attHRP then
+            local midPoint = (defHRP.Position + attHRP.Position) / 2
+            local dir = (defHRP.Position - attHRP.Position).Unit
+            local right = dir:Cross(Vector3.new(0,1,0)).Unit
+            local offsetPos = defHRP.Position + (dir * config.Offset.Z) + (Vector3.new(0,1,0) * config.Offset.Y) + (right * config.Offset.X)
+            
+            customHitCameraCFrame = CFrame.lookAt(offsetPos, midPoint)
+        elseif defHRP then
+            local offsetPos = defHRP.Position + config.Offset
+            customHitCameraCFrame = CFrame.lookAt(offsetPos, defHRP.Position)
+        end
+        
+        task.delay(config.Duration or 0.8, function()
+            customHitCameraActive = false
+        end)
+    end
+
+    -- Slowmo Effect (Slowing down animation speeds)
+    if hcConfig and hcConfig.UseSlowmo then
+        local dur = hcConfig.SlowmoDuration or 0.5
+        local val = hcConfig.SlowmoValue or 0.2
+        
+        local charsToSlow = {}
+        local defPlayer = Players:FindFirstChild(hitData.DefenderName)
+        local attPlayer = Players:FindFirstChild(hitData.AttackerName)
+        if defPlayer and defPlayer.Character then table.insert(charsToSlow, defPlayer.Character) end
+        if attPlayer and attPlayer.Character then table.insert(charsToSlow, attPlayer.Character) end
+        if debugDummy and debugDummy.Parent then table.insert(charsToSlow, debugDummy) end
+        
+        for _, char in pairs(charsToSlow) do
+            local hum = char:FindFirstChild("Humanoid")
+            if hum then
+                local anim = hum:FindFirstChild("Animator")
+                if anim then
+                    for _, t in pairs(anim:GetPlayingAnimationTracks()) do
+                        t:AdjustSpeed(val)
+                    end
+                end
+            end
+        end
+        
+        task.delay(dur, function()
+            for _, char in pairs(charsToSlow) do
+                local hum = char:FindFirstChild("Humanoid")
+                if hum then
+                    local anim = hum:FindFirstChild("Animator")
+                    if anim then
+                        for _, t in pairs(anim:GetPlayingAnimationTracks()) do
+                            t:AdjustSpeed(1)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end
+
 -- Handle damage events (both global for popup and local for animation)
 DealDamageEvent.OnClientEvent:Connect(function(hitData)
     -- Global event - show damage number popup on defender (visible to everyone)
@@ -1625,6 +1714,7 @@ DealDamageEvent.OnClientEvent:Connect(function(hitData)
             playHitParticles(defenderPlayer.Character) -- Spawn particle untuk semua orang yg melihat musuh kena hit
             -- Attacker plays sound locally in performLightAttack/performHeavyAttack
         end
+        triggerSlowmoAndCamera(hitData)
         return -- Don't process further for global events
     end
     
@@ -1672,7 +1762,7 @@ DealDamageEvent.OnClientEvent:Connect(function(hitData)
                 
                 -- Menentukan konfigurasi pushback
                 local isFar = hitData.ComboIndex and hitData.ComboIndex % 4 == 0
-                local cfg = isFar and FightingConfig.Combat.PushMechanics.DefenderFar or FightingConfig.Combat.PushMechanics.DefenderNormal
+                local cfg = isFar and FightingConfig.Combat.PushMechanics[hitData.AttackType .. "Attack"].DefenderFar or FightingConfig.Combat.PushMechanics[hitData.AttackType .. "Attack"].DefenderNormal
                 
                 if cfg.Delay > 0 then task.wait(cfg.Delay) end
                 
@@ -1727,21 +1817,21 @@ BlockEvent.OnClientEvent:Connect(function(data)
 end)
 
 -- Camera shake events
-CameraShakeEvent.OnClientEvent:Connect(function(shakeType)
+CameraShakeEvent.OnClientEvent:Connect(function(shakeType, attackType)
     local config = FightingConfig.Camera
     
-    print("📷 [SHAKE] Received shake event:", shakeType)
+    print("📷 [SHAKE] Received shake event:", shakeType, "AttackType:", attackType)
     
     if shakeType == "Hit" and config.HitShake then
         local s = config.HitShake
         -- Hit gets blood + blur effects (isHitEffect = true)
-        cameraShake(s.Amplitude, s.Frequency, s.Duration, s.ZoomAmount or 0, true)
+        cameraShake(s.Amplitude, s.Frequency, s.Duration, s.ZoomAmount or 0, true, attackType)
     elseif shakeType == "Block" and config.BlockShake then
         local s = config.BlockShake
-        cameraShake(s.Amplitude, s.Frequency, s.Duration, s.ZoomAmount or 0, false)
+        cameraShake(s.Amplitude, s.Frequency, s.Duration, s.ZoomAmount or 0, false, attackType)
     elseif shakeType == "Attack" and config.AttackShake then
         local s = config.AttackShake
-        cameraShake(s.Amplitude, s.Frequency, s.Duration, s.ZoomAmount or 0, false)
+        cameraShake(s.Amplitude, s.Frequency, s.Duration, s.ZoomAmount or 0, false, attackType)
         
         -- Attacker receives this when their attack hits a REAL ENEMY
         playSoundEffect("PunchHit")

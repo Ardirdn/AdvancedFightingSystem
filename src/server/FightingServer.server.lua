@@ -735,8 +735,8 @@ DealDamageEvent.OnServerEvent:Connect(function(attacker, attackType, comboIndex)
         DataHandler.AddDamageTaken(defender, actualDamage)
         
         -- Camera shake for hit (BOTH players feel the impact)
-        CameraShakeEvent:FireClient(defender, "Hit")
-        CameraShakeEvent:FireClient(attacker, "Attack") -- Attacker feedback
+        CameraShakeEvent:FireClient(defender, "Hit", attackType)
+        CameraShakeEvent:FireClient(attacker, "Attack", attackType) -- Attacker feedback
     end
     
     -- Update stats for both players
@@ -758,6 +758,7 @@ DealDamageEvent.OnServerEvent:Connect(function(attacker, attackType, comboIndex)
             ComboIndex = comboIndex,
             Damage = actualDamage,
             DefenderName = defender.Name,  -- So clients know who got hit
+            AttackerName = attacker.Name,  -- So clients know who attacked
             IsLocalHit = false,
             PlaySound = true,  -- Play sound on successful hit
         }
@@ -772,6 +773,7 @@ DealDamageEvent.OnServerEvent:Connect(function(attacker, attackType, comboIndex)
             PlaySound = false,  -- Sound already played from global event
             AttackerLookVector = attackerHRP.CFrame.LookVector,
             AttackerPosition = attackerHRP.Position,
+            AttackerName = attacker.Name,
         }
         DealDamageEvent:FireClient(defender, hitDataForDefender)
     elseif wasBlocked then
