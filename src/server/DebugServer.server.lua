@@ -16,6 +16,8 @@
 local Players          = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService     = game:GetService("TweenService")
+local ModularConfig    = ReplicatedStorage:WaitForChild("Modules")
+local FightingConfig   = require(ModularConfig:WaitForChild("FightingConfig"))
 
 -- ── Wait for FightingRemotes ──────────────────────────────────────────────────
 local FightingRemotes = ReplicatedStorage:WaitForChild("FightingRemotes", 15)
@@ -280,15 +282,17 @@ HitDebugDummy.OnServerEvent:Connect(function(player, attackType, comboStep)
             local pushDir    = playerHRP and playerHRP.CFrame.LookVector or -dummyHRP.CFrame.LookVector
             pushDir          = Vector3.new(pushDir.X, 0, pushDir.Z).Unit
             
-            local maxDist    = 4 -- Fixed 4 stud untuk light & heavy
-            local duration   = 0.08
+            local isFar = comboStep and comboStep % 4 == 0
+            local cfg = isFar and FightingConfig.Combat.PushMechanics.DefenderFar or FightingConfig.Combat.PushMechanics.DefenderNormal
             
-            -- Jika hit ke-4 dalam combo berturut-turut, maka pushback 2x lipat (8 stud dalam waktu lebih lama)
-            if comboStep and comboStep % 4 == 0 then
-                maxDist = 8
-                duration = 0.16
+            local maxDist    = cfg.Distance
+            local duration   = cfg.Duration
+            
+            if isFar then
                 print("🚀 [DebugServer] Hit ke-4 terdeteksi! Pushback Dummy 2x lebih jauh.")
             end
+            
+            if cfg.Delay > 0 then task.wait(cfg.Delay) end
 
             -- Raycast to detect walls and clamp distance (dummy is Anchored so no physics)
             local rayParams = RaycastParams.new()

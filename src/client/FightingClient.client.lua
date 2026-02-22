@@ -466,20 +466,26 @@ end
 -- ATTACKER PUSH FORWARD
 -- ============================================
 -- Saat hit connect, attacker melaju 3 stud ke depan (ke arah musuh).
--- Pakai BodyVelocity agar mentok di tembok.
 local function pushAttackerForward()
     if not HRP then return end
     task.spawn(function()
+        local cfg = FightingConfig.Combat.PushMechanics.Attacker
+        
+        if cfg.Delay > 0 then
+            task.wait(cfg.Delay)
+        end
+        
         local pushDir = HRP.CFrame.LookVector
         pushDir = Vector3.new(pushDir.X, 0, pushDir.Z).Unit
         
+        local speed = cfg.Distance / cfg.Duration
         local bv = Instance.new("BodyVelocity")
-        bv.Velocity  = pushDir * 33                 -- 33 stud/s × 0.12s ≈ 4 stud
+        bv.Velocity  = pushDir * speed
         bv.MaxForce  = Vector3.new(1e6, 0, 1e6)     -- horizontal only
         bv.P         = 1e6
         bv.Parent    = HRP
         
-        task.wait(0.12)
+        task.wait(cfg.Duration)
         if bv and bv.Parent then bv:Destroy() end
     end)
 end
@@ -1673,13 +1679,17 @@ DealDamageEvent.OnClientEvent:Connect(function(hitData)
                 local pushDir   = hitData.AttackerLookVector or -HRP.CFrame.LookVector
                 pushDir         = Vector3.new(pushDir.X, 0, pushDir.Z).Unit
                 
-                -- Enemy speed 1.5x lebih cepat dari player agar tidak bertubrukan
-                local speed     = 50
-                local duration  = 0.2
+                -- Menentukan konfigurasi pushback
+                local isFar = hitData.ComboIndex and hitData.ComboIndex % 4 == 0
+                local cfg = isFar and FightingConfig.Combat.PushMechanics.DefenderFar or FightingConfig.Combat.PushMechanics.DefenderNormal
                 
-                -- Jika merupakan hit ke-4 dalam combo (atau kelipatan 4), dorong mundur 2x lipat lebih jauh
-                if hitData.ComboIndex and hitData.ComboIndex % 4 == 0 then
-                    duration = 0.3 -- (50 stud/s x 0.16s = 8 stud)
+                if cfg.Delay > 0 then task.wait(cfg.Delay) end
+                
+                -- Enemy speed & duration dari Config
+                local speed     = cfg.Distance / cfg.Duration
+                local duration  = cfg.Duration
+                
+                if isFar then
                     print("🚀 [FightingClient] Hit ke-4 terdeteksi! Pushback 2x lebih jauh.")
                 end
 

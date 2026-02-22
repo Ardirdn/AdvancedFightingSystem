@@ -93,6 +93,30 @@ FightingConfig.Combat = {
         ChargeTime = 0.5, -- Waktu charge sebelum attack
         BreakBlock = false, -- Apakah bisa break block?
     },
+    
+    -- Konfigurasi Dorongan (Pushback / Pushforward)
+    PushMechanics = {
+        -- Attacker maju saat memukul
+        Attacker = {
+            Distance = 3.5,       -- Jarak maju (Studs)
+            Duration = 0.2,    -- Waktu tempuh dorongan
+            Delay = 0,       -- Jeda sebelum dorongan dimulai
+        },
+        
+        -- Defender mundur saat dipukul (Normal)
+        DefenderNormal = {
+            Distance = 4,       -- Jarak mundur biasa
+            Duration = 0.08,    -- Waktu tempuh (lebih cepat agar tidak bertubrukan)
+            Delay = 0,          -- Langsung mundur tanpa delay
+        },
+        
+        -- Defender mundur saat dipukul di akhir combo (Hit ke-4)
+        DefenderFar = {
+            Distance = 8,      -- Jarak terpental belakangan
+            Duration = 0.1,     -- Waktu tempuh
+            Delay = 0,          -- Langsung mundur
+        },
+    },
 }
 
 -- ============================================
