@@ -1177,8 +1177,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         end
     end
     
-    -- Only process combat inputs if round is active
-    if not isRoundActive then return end
+    -- Only process combat inputs if allowed to act (isRoundActive or DEBUG_MODE)
+    if not canAct() then return end
     
     -- Space + direction = Dodge
     if input.KeyCode == Enum.KeyCode.Space then
