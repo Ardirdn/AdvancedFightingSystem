@@ -300,37 +300,52 @@ end
 
 local PhysicsService = game:GetService("PhysicsService")
 
--- Create collision group for fighters (run once)
-local function setupCollisionGroups()
+-- ============================================
+-- GLOBAL PLAYER COLLISION CONTROL
+-- ============================================
+
+-- Create a global "Fighters" collision group that does not collide with itself
+local function setupGlobalCollision()
     pcall(function()
-        PhysicsService:RegisterCollisionGroup("FighterA")
-        PhysicsService:RegisterCollisionGroup("FighterB")
-        PhysicsService:CollisionGroupSetCollidable("FighterA", "FighterB", false)
+        PhysicsService:RegisterCollisionGroup("Fighters")
+        PhysicsService:CollisionGroupSetCollidable("Fighters", "Fighters", false)
     end)
 end
-setupCollisionGroups()
+setupGlobalCollision()
 
--- Set player to a collision group
-local function setPlayerCollisionGroup(player, groupName)
-    if not player or not player.Character then return end
+-- Apply "Fighters" collision group to any character parts automatically
+local function setCharacterCollisionGroup(character)
+    if not character then return end
     
-    for _, part in pairs(player.Character:GetDescendants()) do
+    -- Function to set collision group
+    local function setPartCollision(part)
         if part:IsA("BasePart") then
-            part.CollisionGroup = groupName
+            part.CollisionGroup = "Fighters"
         end
     end
+    
+    -- Apply to existing parts
+    for _, part in pairs(character:GetDescendants()) do
+        setPartCollision(part)
+    end
+    
+    -- Apply to any new parts added later
+    character.DescendantAdded:Connect(setPartCollision)
 end
 
--- Reset player collision to default
-local function resetPlayerCollision(player)
-    if not player or not player.Character then return end
-    
-    for _, part in pairs(player.Character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CollisionGroup = "Default"
-        end
+-- Hook up PlayerAdded to listen for characters
+Players.PlayerAdded:Connect(function(player)
+    if player.Character then
+        setCharacterCollisionGroup(player.Character)
     end
-end
+    player.CharacterAdded:Connect(function(character)
+        setCharacterCollisionGroup(character)
+        
+        -- Beri delay sedikit agar humanoids/parts ter-load oleh Roblox
+        task.wait(0.5)
+        setCharacterCollisionGroup(character)
+    end)
+end)
 
 -- ============================================
 -- MATCH LOGIC
@@ -384,10 +399,6 @@ local function startMatch(arenaState)
     
     if fightPosA then teleportPlayerToPosition(playerA, fightPosA) end
     if fightPosB then teleportPlayerToPosition(playerB, fightPosB) end
-    
-    -- Set collision groups so players can pass through each other
-    setPlayerCollisionGroup(playerA, "FighterA")
-    setPlayerCollisionGroup(playerB, "FighterB")
     
     -- Notify clients
     StartMatchEvent:FireClient(playerA, {
@@ -584,11 +595,9 @@ function endMatch(arenaState, winner)
     if outPos then
         if playerA and playerA.Character then
             teleportPlayerToPosition(playerA, outPos)
-            resetPlayerCollision(playerA)
         end
         if playerB and playerB.Character then
             teleportPlayerToPosition(playerB, outPos)
-            resetPlayerCollision(playerB)
         end
     end
     
@@ -761,6 +770,8 @@ DealDamageEvent.OnServerEvent:Connect(function(attacker, attackType, comboIndex)
             Damage = actualDamage,
             IsLocalHit = true,  -- Defender knows it's them
             PlaySound = false,  -- Sound already played from global event
+            AttackerLookVector = attackerHRP.CFrame.LookVector,
+            AttackerPosition = attackerHRP.Position,
         }
         DealDamageEvent:FireClient(defender, hitDataForDefender)
     elseif wasBlocked then

@@ -50,6 +50,9 @@ print("✅ [FightingClient] FightingConfig loaded")
 local AnimationConfig = require(Modules:WaitForChild("AnimationConfig"))
 print("✅ [FightingClient] AnimationConfig loaded")
 
+local SoundConfig = require(Modules:WaitForChild("SoundConfig"))
+print("✅ [FightingClient] SoundConfig loaded")
+
 -- Wait for Remotes
 print("⏳ [FightingClient] Waiting for FightingRemotes...")
 local FightingRemotes = ReplicatedStorage:WaitForChild("FightingRemotes", 10)
@@ -281,71 +284,46 @@ local ContentProvider = game:GetService("ContentProvider")
 
 -- Preloaded sound instances
 local preloadedSounds = {
-    Punch = {},
-    HeavyPunch = {},
+    PunchHit = {},
+    VictimHit = {},
+    Whoosh = {},
 }
 local soundsPreloaded = false
-local lastSoundTime = 0
-local SOUND_COOLDOWN = 0.5 -- 0.5 second cooldown between sounds
 
 -- Preload all sounds at match start
 local function preloadAllSounds()
     if soundsPreloaded then return end
+    print("🔊 [Sound] Preloading combat sounds...")
     
-    print("🔊 [Sound] Preloading punch sounds...")
+    local s = SoundConfig.Sounds
+    local toLoad = {
+        { name = "PunchHit", data = s.PunchHit, vol = s.PunchVolume or 0.8 },
+        { name = "VictimHit", data = s.VictimHit, vol = s.HitVolume or 0.8 },
+        { name = "Whoosh", data = s.Whoosh, vol = s.WhooshVolume or 0.8 },
+    }
     
-    -- Create sound instances for punch sounds
-    if FightingConfig.Sounds.Punch then
-        for i, soundId in ipairs(FightingConfig.Sounds.Punch) do
-            local sound = Instance.new("Sound")
-            sound.SoundId = soundId
-            sound.Volume = FightingConfig.Sounds.PunchVolume or 0.8
-            sound.Parent = SoundService
-            preloadedSounds.Punch[i] = sound
-        end
-    end
-    
-    -- Create sound instances for heavy punch sounds
-    if FightingConfig.Sounds.HeavyPunch then
-        for i, soundId in ipairs(FightingConfig.Sounds.HeavyPunch) do
-            local sound = Instance.new("Sound")
-            sound.SoundId = soundId
-            sound.Volume = FightingConfig.Sounds.HeavyPunchVolume or 1.0
-            sound.Parent = SoundService
-            preloadedSounds.HeavyPunch[i] = sound
-        end
-    end
-    
-    -- Preload all sound assets
     local assetsToPreload = {}
-    for _, sound in ipairs(preloadedSounds.Punch) do
-        table.insert(assetsToPreload, sound)
-    end
-    for _, sound in ipairs(preloadedSounds.HeavyPunch) do
-        table.insert(assetsToPreload, sound)
+    
+    for _, group in ipairs(toLoad) do
+        if group.data then
+            for i, soundId in ipairs(group.data) do
+                local sound = Instance.new("Sound")
+                sound.SoundId = soundId
+                sound.Volume = group.vol
+                sound.Parent = SoundService
+                preloadedSounds[group.name][i] = sound
+                table.insert(assetsToPreload, sound)
+            end
+        end
     end
     
     ContentProvider:PreloadAsync(assetsToPreload)
     soundsPreloaded = true
-    print("🔊 [Sound] All sounds preloaded!")
+    print("🔊 [Sound] All combat sounds preloaded!")
 end
 
-local function playHitSound(attackType)
-    -- Check cooldown
-    local currentTime = tick()
-    if currentTime - lastSoundTime < SOUND_COOLDOWN then
-        return -- Skip if still in cooldown
-    end
-    lastSoundTime = currentTime
-    
-    -- Pick sound list based on attack type
-    local soundList
-    if attackType == "Heavy" then
-        soundList = preloadedSounds.HeavyPunch
-    else
-        soundList = preloadedSounds.Punch
-    end
-    
+local function playSoundEffect(soundCategory)
+    local soundList = preloadedSounds[soundCategory]
     if not soundList or #soundList == 0 then return end
     
     -- Pick random preloaded sound and play
@@ -367,12 +345,12 @@ local function playHitSound(attackType)
 end
 
 local function playResultSound(isWin)
-    local soundId = isWin and FightingConfig.Sounds.Win or FightingConfig.Sounds.Lose
+    local soundId = isWin and SoundConfig.Sounds.Win or SoundConfig.Sounds.Lose
     if not soundId then return end
     
     local sound = Instance.new("Sound")
     sound.SoundId = soundId
-    sound.Volume = FightingConfig.Sounds.WinLoseVolume or 0.7
+    sound.Volume = SoundConfig.Sounds.WinLoseVolume or 0.7
     sound.Parent = SoundService
     sound:Play()
     sound.Ended:Connect(function()
@@ -397,11 +375,65 @@ local function stopAllCombatAnimations()
 end
 
 -- ============================================
+-- HIT PARTICLES
+-- ============================================
+local EffectsFolder = ReplicatedStorage:FindFirstChild("Effects")
+
+local function playHitParticles(targetCharacter)
+    if not EffectsFolder or not targetCharacter then return end
+    
+    -- Selalu munculkan di tengah badan (Torso / UpperTorso / HRP)
+    local targetPart = targetCharacter:FindFirstChild("UpperTorso") 
+                    or targetCharacter:FindFirstChild("Torso")
+                    or targetCharacter:FindFirstChild("HumanoidRootPart")
+    
+    if not targetPart then return end
+    
+    -- Selalu munculkan efek "Hit"
+    local effectsToPlay = {"Hit"}
+    
+    -- BloodSplat lebih jarang (misal ~25% chance), mainkan BERSAMAAN dengan Hit
+    if math.random(1, 100) <= 25 then
+        table.insert(effectsToPlay, "BloodSplat")
+    end
+    
+    for _, effectName in ipairs(effectsToPlay) do
+        local effectPrefab = EffectsFolder:FindFirstChild(effectName)
+        if effectPrefab then
+            local sourceAtt = effectPrefab:FindFirstChild("Middle")
+            if sourceAtt and sourceAtt:IsA("Attachment") then
+                -- Clone attachment berisi particle
+                local cloneAtt = sourceAtt:Clone()
+                
+                -- Posisi selalu konstan di titik tengah (offset 0)
+                cloneAtt.Position = Vector3.zero
+                cloneAtt.Parent = targetPart
+                
+                -- Emit partikel 1 kali
+                for _, child in ipairs(cloneAtt:GetChildren()) do
+                    if child:IsA("ParticleEmitter") then
+                        child.Enabled = false
+                        child:Emit(1)
+                    end
+                end
+                
+                -- Cleanup setelah 1.5 detik
+                task.delay(1.5, function()
+                    if cloneAtt and cloneAtt.Parent then
+                        cloneAtt:Destroy()
+                    end
+                end)
+            end
+        end
+    end
+end
+
+-- ============================================
 -- DEBUG DUMMY HIT HELPER
 -- ============================================
 -- Checks if debugDummy is within attack range and registers a hit on it.
 -- Only active when DEBUG_MODE = true.
-local function hitDebugDummy(attackType)
+local function hitDebugDummy(attackType, comboStep)
     if not DEBUG_MODE then return end
     if not debugDummy or not debugDummy.Parent then return end
     local dHRP = debugDummy:FindFirstChild("HumanoidRootPart")
@@ -416,7 +448,8 @@ local function hitDebugDummy(attackType)
         print("🎯 [DEBUG] Hit dummy with", attackType, "| dist:", string.format("%.1f", dist))
 
         -- Audio + screen shake feedback (client only)
-        playHitSound(attackType == "Heavy" and "Heavy" or "Light", nil)
+        playSoundEffect("PunchHit")
+        playHitParticles(debugDummy)  -- Spawn particles
         local sh = FightingConfig.Camera.AttackShake
         if _cameraShakeFn then   -- assigned later once cameraShake is defined
             _cameraShakeFn(sh.Amplitude, sh.Frequency, sh.Duration, sh.ZoomAmount, false)
@@ -424,7 +457,7 @@ local function hitDebugDummy(attackType)
 
         -- Tell server to register hit (shows HP on billboard)
         if HitDebugDummyEvent then
-            HitDebugDummyEvent:FireServer(attackType)
+            HitDebugDummyEvent:FireServer(attackType, comboStep)
         end
     end
 end
@@ -437,12 +470,16 @@ end
 local function pushAttackerForward()
     if not HRP then return end
     task.spawn(function()
+        local pushDir = HRP.CFrame.LookVector
+        pushDir = Vector3.new(pushDir.X, 0, pushDir.Z).Unit
+        
         local bv = Instance.new("BodyVelocity")
-        bv.Velocity  = HRP.CFrame.LookVector * 35   -- 35 stud/s ≈ 3 stud dalam 0.09s
+        bv.Velocity  = pushDir * 33                 -- 33 stud/s × 0.12s ≈ 4 stud
         bv.MaxForce  = Vector3.new(1e6, 0, 1e6)     -- horizontal only
         bv.P         = 1e6
         bv.Parent    = HRP
-        task.wait(0.09)
+        
+        task.wait(0.12)
         if bv and bv.Parent then bv:Destroy() end
     end)
 end
@@ -510,10 +547,9 @@ local function performLightAttack()
         -- Wait for windup then fire damage event
         local windupTime = attackTrack.Length * 0.3
         task.delay(windupTime, function()
-            -- Always trigger sound + shake + dummy hit (debug bypasses isRoundActive)
-            playHitSound("Light", nil)
-            pushAttackerForward()          -- attacker maju 3 stud ke depan
-            hitDebugDummy("Light")
+            playSoundEffect("Whoosh")
+            pushAttackerForward()
+            hitDebugDummy("Light", comboStep)
             if isRoundActive then
                 DealDamageEvent:FireServer("Light", comboStep)
             end
@@ -582,9 +618,9 @@ local function performHeavyAttack()
         
         -- Charge time before dealing damage
         task.delay(config.ChargeTime, function()
-            playHitSound("Heavy", nil)
+            playSoundEffect("Whoosh")
             pushAttackerForward()
-            hitDebugDummy("Heavy")
+            hitDebugDummy("Heavy", heavyComboStep)
             if isRoundActive then
                 DealDamageEvent:FireServer("Heavy", heavyComboStep)
             end
@@ -1413,7 +1449,7 @@ StartMatchEvent.OnClientEvent:Connect(function(data)
     isInMatch = true
     mySide = data.Side
     
-    -- Preload sounds for instant playback
+    -- Preloading can also be run here, but it's safe if already called
     preloadAllSounds()
     
     -- Find opponent
@@ -1589,6 +1625,7 @@ DealDamageEvent.OnClientEvent:Connect(function(hitData)
         local defenderPlayer = Players:FindFirstChild(hitData.DefenderName)
         if defenderPlayer and defenderPlayer.Character then
             showDamageNumber(defenderPlayer.Character, hitData.Damage)
+            playHitParticles(defenderPlayer.Character) -- Spawn particle untuk semua orang yg melihat musuh kena hit
             -- Attacker plays sound locally in performLightAttack/performHeavyAttack
         end
         return -- Don't process further for global events
@@ -1598,9 +1635,12 @@ DealDamageEvent.OnClientEvent:Connect(function(hitData)
     if hitData.IsLocalHit then
         print("💥 [FightingClient] Got hit! Damage:", hitData.Damage)
         
-        -- Play hit sound for victim (so they also hear it)
-        playHitSound(hitData.AttackType)
-        
+        -- Play hit sound for victim (HANYA untuk victim)
+        playSoundEffect("VictimHit")
+        -- Reset combo saat terkena hit (player ter-interrupt)
+        comboStep = 1
+        heavyComboStep = 1
+
         -- ── Hit animation (defender plays on their own character) ─────────────
         if hitData.AttackType == "Heavy" then
             -- HeavyHit is now an array — use ComboIndex or fallback to 1
@@ -1622,13 +1662,30 @@ DealDamageEvent.OnClientEvent:Connect(function(hitData)
         -- ── Pushback via BodyVelocity (respects collision — mentok di tembok) ──────
         if HRP then
             task.spawn(function()
-                local pushDir   = -HRP.CFrame.LookVector  -- backward = away from opponent
-                local speed     = (hitData.AttackType == "Heavy") and 60 or 45  -- studs/s  (light: 45×0.15≈6 stud)
-                local duration  = (hitData.AttackType == "Heavy") and 0.18 or 0.15
+                -- Auto-rotate to face attacker
+                -- (Jika ada auto-lock system loop, dia akan meng-override ini otomatis)
+                if hitData.AttackerPosition then
+                    local lookPos = Vector3.new(hitData.AttackerPosition.X, HRP.Position.Y, hitData.AttackerPosition.Z)
+                    HRP.CFrame = CFrame.lookAt(HRP.Position, lookPos)
+                end
+
+                -- Push direction sama dengan arah penyerang
+                local pushDir   = hitData.AttackerLookVector or -HRP.CFrame.LookVector
+                pushDir         = Vector3.new(pushDir.X, 0, pushDir.Z).Unit
+                
+                -- Enemy speed 1.5x lebih cepat dari player agar tidak bertubrukan
+                local speed     = 50
+                local duration  = 0.2
+                
+                -- Jika merupakan hit ke-4 dalam combo (atau kelipatan 4), dorong mundur 2x lipat lebih jauh
+                if hitData.ComboIndex and hitData.ComboIndex % 4 == 0 then
+                    duration = 0.3 -- (50 stud/s x 0.16s = 8 stud)
+                    print("🚀 [FightingClient] Hit ke-4 terdeteksi! Pushback 2x lebih jauh.")
+                end
 
                 -- BodyVelocity applies constant velocity; Roblox physics stops it at walls
                 local bv = Instance.new("BodyVelocity")
-                bv.Velocity  = Vector3.new(pushDir.X * speed, 0, pushDir.Z * speed)
+                bv.Velocity  = pushDir * speed
                 bv.MaxForce  = Vector3.new(1e6, 0, 1e6)  -- horizontal only, no Y override
                 bv.P         = 1e6
                 bv.Parent    = HRP
@@ -1643,9 +1700,9 @@ DealDamageEvent.OnClientEvent:Connect(function(hitData)
             task.spawn(function()
                 local hl = Instance.new("Highlight")
                 hl.FillColor          = Color3.fromRGB(255, 40, 40)
-                hl.FillTransparency   = 0.25
+                hl.FillTransparency   = 0.65 -- Intensitas merah diturunkan 50%+ 
                 hl.OutlineColor       = Color3.fromRGB(255, 0, 0)
-                hl.OutlineTransparency = 0.4
+                hl.OutlineTransparency = 0.7
                 hl.DepthMode          = Enum.HighlightDepthMode.Occluded  -- respects depth, no X-ray
                 hl.Parent             = Character
 
@@ -1684,6 +1741,9 @@ CameraShakeEvent.OnClientEvent:Connect(function(shakeType)
     elseif shakeType == "Attack" and config.AttackShake then
         local s = config.AttackShake
         cameraShake(s.Amplitude, s.Frequency, s.Duration, s.ZoomAmount or 0, false)
+        
+        -- Attacker receives this when their attack hits a REAL ENEMY
+        playSoundEffect("PunchHit")
     end
 end)
 
@@ -1806,8 +1866,10 @@ if DEBUG_MODE then
     end)
 end
 
-
-
+-- Force preload right away so dummy and local tests have audio immediately
+task.spawn(function()
+    preloadAllSounds()
+end)
 
 -- Expose functions to global for UI script
 _G.FightingClientFunctions = {

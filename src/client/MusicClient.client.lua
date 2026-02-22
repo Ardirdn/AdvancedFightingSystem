@@ -34,7 +34,7 @@ local AMBIENT_MUSIC = {
 local FIGHT_MUSIC = "rbxassetid://9038254260"
 
 local MUSIC_VOLUME = 0.7          -- Default volume
-local FIGHT_MUSIC_VOLUME = 0.85   -- Fight music volume
+local FIGHT_MUSIC_VOLUME = 0.7   -- Fight music volume
 local FADE_DURATION = 1.5         -- Fade in/out duration in seconds
 
 -- ============================================

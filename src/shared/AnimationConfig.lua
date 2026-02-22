@@ -27,8 +27,9 @@ AnimationConfig.Attack = {
     Combo = {
         [1] = "rbxassetid://120065242609550",
         [2] = "rbxassetid://90883724537708",
-        [3] = "rbxassetid://73965882078897",
-        [4] = "rbxassetid://133885184210256",
+        [3] = "rbxassetid://120065242609550",
+        [4] = "rbxassetid://90883724537708",
+        [5] = "rbxassetid://73965882078897",
     },
     
     -- Animasi saat terkena hit (sesuai dengan attack combo)

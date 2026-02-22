@@ -182,6 +182,13 @@ SpawnDebugDummy.OnServerEvent:Connect(function(player)
     if dummyHRP then
         buildHPGui(dummyHRP)
     end
+    
+    -- Assign CollisionGroup so it never bumps into players globally
+    for _, part in pairs(dummy:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CollisionGroup = "Fighters"
+        end
+    end
 
     dummy.Parent = workspace
 
@@ -230,7 +237,7 @@ local HIT_ANIMS = {
     "rbxassetid://84510747822815",  -- Hit 2
 }
 
-HitDebugDummy.OnServerEvent:Connect(function(player, attackType)
+HitDebugDummy.OnServerEvent:Connect(function(player, attackType, comboStep)
     local dummy = workspace:FindFirstChild("DebugDummy_" .. player.Name)
     if not dummy then return end
 
@@ -247,9 +254,9 @@ HitDebugDummy.OnServerEvent:Connect(function(player, attackType)
     task.spawn(function()
         local hl = Instance.new("Highlight")
         hl.FillColor          = Color3.fromRGB(255, 40, 40)
-        hl.FillTransparency   = 0.25
+        hl.FillTransparency   = 0.65 -- Intensitas merah diturunkan 50%+ 
         hl.OutlineColor       = Color3.fromRGB(255, 0, 0)
-        hl.OutlineTransparency = 0.4
+        hl.OutlineTransparency = 0.7
         hl.DepthMode          = Enum.HighlightDepthMode.Occluded  -- respects depth, no X-ray
         hl.Parent             = dummy
 
@@ -267,8 +274,21 @@ HitDebugDummy.OnServerEvent:Connect(function(player, attackType)
     if dummyHRP then
         task.spawn(function()
             local originalCF = dummyHRP.CFrame
-            local pushDir    = -dummyHRP.CFrame.LookVector
-            local maxDist    = attackType == "Heavy" and (8 + math.random() * 2) or 6
+            
+            -- Push direction = arah dari attacker
+            local playerHRP  = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            local pushDir    = playerHRP and playerHRP.CFrame.LookVector or -dummyHRP.CFrame.LookVector
+            pushDir          = Vector3.new(pushDir.X, 0, pushDir.Z).Unit
+            
+            local maxDist    = 4 -- Fixed 4 stud untuk light & heavy
+            local duration   = 0.08
+            
+            -- Jika hit ke-4 dalam combo berturut-turut, maka pushback 2x lipat (8 stud dalam waktu lebih lama)
+            if comboStep and comboStep % 4 == 0 then
+                maxDist = 8
+                duration = 0.16
+                print("🚀 [DebugServer] Hit ke-4 terdeteksi! Pushback Dummy 2x lebih jauh.")
+            end
 
             -- Raycast to detect walls and clamp distance (dummy is Anchored so no physics)
             local rayParams = RaycastParams.new()
@@ -277,9 +297,14 @@ HitDebugDummy.OnServerEvent:Connect(function(player, attackType)
             local hit = workspace:Raycast(dummyHRP.Position, pushDir * maxDist, rayParams)
             -- Leave ~1 stud gap from wall (approx character radius)
             local safeDist = hit and math.max(0, hit.Distance - 1.0) or maxDist
-            local pushedCF = originalCF + (pushDir * safeDist)
+            
+            -- Auto-rotate dummy to face the attacker
+            local facePos = playerHRP and playerHRP.Position or (originalCF.Position - pushDir)
+            local targetPos = originalCF.Position + (pushDir * safeDist)
+            local pushedCF = CFrame.lookAt(targetPos, Vector3.new(facePos.X, targetPos.Y, facePos.Z))
 
-            TweenService:Create(dummyHRP, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            -- Enemy speed 1.5x lebih cepat dari player agar tidak bertubrukan
+            TweenService:Create(dummyHRP, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                 CFrame = pushedCF
             }):Play()
             -- No return: dummy stays pushed (terdorong, bukan bounce)

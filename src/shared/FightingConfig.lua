@@ -103,7 +103,7 @@ FightingConfig.Camera = {
     -- X = camera offset to RIGHT (positive = player on LEFT of screen)
     -- Y = camera height above player
     -- Z = camera distance behind player
-    FightCameraOffset = Vector3.new(2, 2, 20), -- Player more on LEFT, closer camera
+    FightCameraOffset = Vector3.new(04, 2, 20), -- Player more on LEFT, closer camera
     FightCameraDistance = 30, -- Max kamera zoom distance
     CameraLerpSpeed = 0.08, -- Camera follow speed (higher = snappier, 0.1-0.5)
     
@@ -270,39 +270,7 @@ FightingConfig.Input = {
 -- ============================================
 -- SOUND CONFIGURATION
 -- ============================================
-FightingConfig.Sounds = {
-    -- Normal punch sounds (random pick)
-    Punch = {
-        "rbxassetid://95639714351390",
-        "rbxassetid://104319149626413",
-        "rbxassetid://99850731928647",
-        "rbxassetid://92212123981337",
-        "rbxassetid://100179539712369",
-        "rbxassetid://71444041057068",
-        "rbxassetid://73178141341033",
-        "rbxassetid://89568824426212",
-        "rbxassetid://88773757506723",
-        "rbxassetid://119118595949713",
-    },
-    
-    -- Heavy punch sounds (random pick)
-    HeavyPunch = {
-        "rbxassetid://79550887216632",
-        "rbxassetid://131862524334719",
-        "rbxassetid://94024592458813",
-        "rbxassetid://80533540636628",
-        "rbxassetid://134696843772118",
-    },
-    
-    -- Win/Lose sounds
-    Win = "rbxassetid://96210781050936",
-    Lose = "rbxassetid://92158718098402",
-    
-    -- Volume settings
-    PunchVolume = 0.8,
-    HeavyPunchVolume = 1.0,
-    WinLoseVolume = 0.7,
-}
+-- Konfigurasi Sound telah dipindahkan ke src/shared/SoundConfig.lua
 
 -- ============================================
 -- ANIMATION IDS
