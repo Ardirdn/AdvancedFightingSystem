@@ -52,10 +52,24 @@ AnimationConfig.HeavyAttack = {
         [1] = {
             id = "rbxassetid://112697395783024",
             DamageTime = 0.2, -- Waktu hit / push dihitung sejak animasi dimulai (Detik ke-berapa?)
+            CustomHitCamera = {
+                Enabled = true,
+                Offset = Vector3.new(0, 0, -10), -- X=3 (Kanan Kepala), Y=0 (Tinggi sejajar Head), Z=-3 (Di depan target)
+                FOV = 10, -- Field of View menjadi 40
+                LookAtTarget = true, -- Kamera akan fokus & hard follow Head musuh
+                Duration = 0.4, -- Durasi 1 detik
+            }
         },
         [2] = {
             id = "rbxassetid://133885184210256",
-            DamageTime = 0.2, -- Waktu hit / push dihitung sejak animasi dimulai (Detik ke-berapa?)
+            DamageTime = 0.2,
+            CustomHitCamera = {
+                Enabled = true,
+                Offset = Vector3.new(15, 0, -25), -- Kamera di kiri target, depan 4 stud
+                FOV = 10,
+                LookAtTarget = true,
+                Duration = 0.4,
+            }
         },
         
     },

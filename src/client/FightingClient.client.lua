@@ -111,6 +111,7 @@ local debugDummy = nil           -- Model ref set when H spawns a dummy
 local SpawnDebugDummyEvent = nil -- fetched in DEBUG_MODE block
 local HitDebugDummyEvent   = nil -- fetched in DEBUG_MODE block
 local _cameraShakeFn       = nil -- forward-ref: assigned after cameraShake is defined
+local _triggerCustomHitCameraFn = nil -- forward-ref: assigned after triggerCustomHitCamera is defined
 
 -- Stats (received from server)
 local myHealth = 100
@@ -458,6 +459,19 @@ local function hitDebugDummy(attackType, comboStep)
         if _cameraShakeFn then   -- assigned later once cameraShake is defined
             _cameraShakeFn(sh.Amplitude, sh.Frequency, sh.Duration, sh.ZoomAmount, false, attackType)
         end
+        
+        if _triggerCustomHitCameraFn then
+            local hitDataDummy = {
+                AttackType = attackType,
+                ComboIndex = comboStep,
+                DefenderName = debugDummy.Name,
+                AttackerName = Player.Name,
+                Damage = cfg.Damage,
+                IsLocalHit = false,
+                IsDummy = true
+            }
+            _triggerCustomHitCameraFn(hitDataDummy)
+        end
 
         -- Tell server to register hit (shows HP on billboard)
         if HitDebugDummyEvent then
@@ -632,6 +646,9 @@ local function performHeavyAttack()
 
     if heavyTrack then
         stopAllCombatAnimations()
+        if Humanoid then
+            Humanoid.WalkSpeed = 0
+        end
         heavyTrack:Play()
         
         -- Ambil DamageTime dari konfigurasi HeavyAttack di AnimationConfig
@@ -657,11 +674,17 @@ local function performHeavyAttack()
         conn = heavyTrack.Stopped:Connect(function()
             conn:Disconnect()
             isAttacking = false
+            if Humanoid then
+                Humanoid.WalkSpeed = 16
+            end
             -- Advance heavy combo step
             heavyComboStep = (heavyComboStep % math.max(1, numHeavy)) + 1
         end)
     else
         isAttacking = false
+        if Humanoid then
+            Humanoid.WalkSpeed = 16
+        end
         DealDamageEvent:FireServer("Heavy", heavyComboStep)
         heavyComboStep = (heavyComboStep % math.max(1, #animationTracks.HeavyAttack)) + 1
     end
@@ -799,12 +822,14 @@ local function startFightCamera()
     previousCameraCFrame = Camera.CFrame
     previousCameraSubject = Camera.CameraSubject
     
-    -- Disable auto rotate for manual control
+    -- Disable auto rotate for manual control & disable jump
     if Humanoid then
         previousAutoRotate = Humanoid.AutoRotate
         if FightingConfig.Camera.LockPlayerRotation then
             Humanoid.AutoRotate = false
         end
+        -- Disable Jump saat mode fight / debug
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
     end
     
     -- Lock player zoom to fight distance
@@ -832,7 +857,6 @@ local function startFightCamera()
         if not HRP or not HRP.Parent then return end
         
         if customHitCameraActive then
-            Camera.CFrame = customHitCameraCFrame
             return
         end
         
@@ -922,9 +946,13 @@ local function stopFightCamera()
         fightCameraConn = nil
     end
     
-    -- Restore AutoRotate
-    if Humanoid and previousAutoRotate ~= nil then
-        Humanoid.AutoRotate = previousAutoRotate
+    -- Restore AutoRotate & Enable Jump
+    if Humanoid then
+        if previousAutoRotate ~= nil then
+            Humanoid.AutoRotate = previousAutoRotate
+        end
+        -- Enable Jump kembali
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
     end
     
     -- Smooth transition back
@@ -1003,7 +1031,7 @@ local function cameraShake(amplitude, frequency, duration, zoomAmount, isHitEffe
     -- ── FOV PUNCH EFFECT ──────────────────────────────────────────────────────
     -- Quick FOV dip on every hit/attack for cinematic impact feel.
     -- Only active when fight camera is running; never alters BASE_FOV.
-    if fightCameraActive then
+    if fightCameraActive and not customHitCameraActive then
         local fightFOV  = FightingConfig.Camera.FightFieldOfView or 60
         
         local minDip, maxDip = 2, 5
@@ -1631,77 +1659,77 @@ UpdateStatsEvent.OnClientEvent:Connect(function(data)
     }
 end)
 
-local function triggerSlowmoAndCamera(hitData)
+local function triggerCustomHitCamera(hitData)
     if hitData.AttackType ~= "Heavy" then return end
     
-    local config = FightingConfig.Camera.CustomHitCamera
-    local hcConfig = FightingConfig.Combat.HeavyAttack
+    local comboIdx = hitData.ComboIndex or 1
+    local hcAnimConfig = AnimationConfig.HeavyAttack.Combo[comboIdx]
+    if not hcAnimConfig or type(hcAnimConfig) ~= "table" then return end
     
-    -- Custom Hit Camera (Hanya untuk player yang bertarung)
-    if config and config.Enabled and fightCameraActive then
+    local config = hcAnimConfig.CustomHitCamera
+    
+    -- Custom Hit Camera (Bisa jalan baik saat fight resmi maupun di Debug Mode)
+    if config and config.Enabled then
         customHitCameraActive = true
         
-        local defPlayer = Players:FindFirstChild(hitData.DefenderName)
-        local defHRP = defPlayer and defPlayer.Character and defPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local defChar
+        if hitData.IsDummy and debugDummy then
+            defChar = debugDummy
+        else
+            local defPlayer = Players:FindFirstChild(hitData.DefenderName)
+            defChar = defPlayer and defPlayer.Character
+        end
         local attPlayer = Players:FindFirstChild(hitData.AttackerName)
         local attHRP = attPlayer and attPlayer.Character and attPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local attForward = attHRP and attHRP.CFrame.LookVector or Vector3.new(0, 0, -1)
         
-        if defHRP and attHRP then
-            local midPoint = (defHRP.Position + attHRP.Position) / 2
-            local dir = (defHRP.Position - attHRP.Position).Unit
-            local right = dir:Cross(Vector3.new(0,1,0)).Unit
-            local offsetPos = defHRP.Position + (dir * config.Offset.Z) + (Vector3.new(0,1,0) * config.Offset.Y) + (right * config.Offset.X)
-            
-            customHitCameraCFrame = CFrame.lookAt(offsetPos, midPoint)
-        elseif defHRP then
-            local offsetPos = defHRP.Position + config.Offset
-            customHitCameraCFrame = CFrame.lookAt(offsetPos, defHRP.Position)
+        -- Override camera setup
+        local wasScriptable = (Camera.CameraType == Enum.CameraType.Scriptable)
+        Camera.CameraType = Enum.CameraType.Scriptable
+        
+        if config.FOV then
+            Camera.FieldOfView = config.FOV
         end
         
-        task.delay(config.Duration or 0.8, function()
+        -- Buat connection camera dinamis (sehingga camera update jika defender terpelanting)
+        local camConn
+        camConn = RunService.RenderStepped:Connect(function()
+            if not customHitCameraActive then
+                camConn:Disconnect()
+                if config.FOV then
+                    local baseTargetFOV = fightCameraActive and (FightingConfig.Camera.FightFieldOfView or 60) or BASE_FOV
+                    Camera.FieldOfView = baseTargetFOV
+                end
+                
+                if not fightCameraActive and not wasScriptable then
+                    -- Kembalikan ke mode normal jika kita tidak sedang dalam match
+                    Camera.CameraType = Enum.CameraType.Custom
+                end
+                return
+            end
+            
+            local defHead = defChar and (defChar:FindFirstChild("Head") or defChar:FindFirstChild("HumanoidRootPart"))
+            
+            if defHead then
+                -- Offset dihitung dari sudut pandang attacker agar arah Kiri/Kanan konsisten (X=Kanan, Y=Atas, Z=Belakang)
+                local offsetCFrame = CFrame.new(defHead.Position) * CFrame.Angles(0, math.atan2(attForward.X, attForward.Z), 0)
+                local offsetPos = (offsetCFrame * CFrame.new(config.Offset)).Position
+                
+                if config.LookAtTarget then
+                    Camera.CFrame = CFrame.lookAt(offsetPos, defHead.Position)
+                else
+                    -- Kamera melihat searah dengan attacker memukul
+                    Camera.CFrame = CFrame.lookAt(offsetPos, offsetPos + attForward)
+                end
+            end
+        end)
+        
+        task.delay(config.Duration or 1.0, function()
             customHitCameraActive = false
         end)
     end
-
-    -- Slowmo Effect (Slowing down animation speeds)
-    if hcConfig and hcConfig.UseSlowmo then
-        local dur = hcConfig.SlowmoDuration or 0.5
-        local val = hcConfig.SlowmoValue or 0.2
-        
-        local charsToSlow = {}
-        local defPlayer = Players:FindFirstChild(hitData.DefenderName)
-        local attPlayer = Players:FindFirstChild(hitData.AttackerName)
-        if defPlayer and defPlayer.Character then table.insert(charsToSlow, defPlayer.Character) end
-        if attPlayer and attPlayer.Character then table.insert(charsToSlow, attPlayer.Character) end
-        if debugDummy and debugDummy.Parent then table.insert(charsToSlow, debugDummy) end
-        
-        for _, char in pairs(charsToSlow) do
-            local hum = char:FindFirstChild("Humanoid")
-            if hum then
-                local anim = hum:FindFirstChild("Animator")
-                if anim then
-                    for _, t in pairs(anim:GetPlayingAnimationTracks()) do
-                        t:AdjustSpeed(val)
-                    end
-                end
-            end
-        end
-        
-        task.delay(dur, function()
-            for _, char in pairs(charsToSlow) do
-                local hum = char:FindFirstChild("Humanoid")
-                if hum then
-                    local anim = hum:FindFirstChild("Animator")
-                    if anim then
-                        for _, t in pairs(anim:GetPlayingAnimationTracks()) do
-                            t:AdjustSpeed(1)
-                        end
-                    end
-                end
-            end
-        end)
-    end
 end
+_triggerCustomHitCameraFn = triggerCustomHitCamera
 
 -- Handle damage events (both global for popup and local for animation)
 DealDamageEvent.OnClientEvent:Connect(function(hitData)
@@ -1714,7 +1742,7 @@ DealDamageEvent.OnClientEvent:Connect(function(hitData)
             playHitParticles(defenderPlayer.Character) -- Spawn particle untuk semua orang yg melihat musuh kena hit
             -- Attacker plays sound locally in performLightAttack/performHeavyAttack
         end
-        triggerSlowmoAndCamera(hitData)
+        triggerCustomHitCamera(hitData)
         return -- Don't process further for global events
     end
     

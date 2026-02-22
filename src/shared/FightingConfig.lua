@@ -94,12 +94,7 @@ FightingConfig.Combat = {
         Range = 6,
         Cooldown = 1, -- Cooldown lebih lama
         ChargeTime = 0.5, -- Waktu charge sebelum attack
-        BreakBlock = false, -- Apakah bisa break block?
-        
-        -- Slowmo saat berhasil hit
-        UseSlowmo = true,
-        SlowmoValue = 0.2, -- 20% dari kecepatan normal
-        SlowmoDuration = 2, -- Durasi slowmo dalam detik
+        BreakBlock = true, -- Apakah bisa break block?
     },
     
     -- Konfigurasi Dorongan (Pushback / Pushforward)
@@ -171,14 +166,6 @@ FightingConfig.Camera = {
     FOVDip = {
         LightAttack = { Min = 2, Max = 5 },
         HeavyAttack = { Min = 10, Max = 15 },
-    },
-    
-    -- Custom Camera untuk Heavy Attack Hit
-    CustomHitCamera = {
-        Enabled = true,              -- Berubah ke custom camera saat heavy attack hit
-        Offset = Vector3.new(0, 1.5, -4), -- Offset relatif terhadap target (contoh: di depan target melihat ke target)
-        LookAtTarget = true,         -- Selalu menatap ke HRP target
-        Duration = 0.8,              -- Berapa lama custom camera bertahan
     },
     
     -- Player rotation lock
