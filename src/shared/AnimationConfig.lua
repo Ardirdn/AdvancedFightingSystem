@@ -13,7 +13,7 @@ local AnimationConfig = {}
 -- ============================================
 AnimationConfig.Block = {
     -- Animasi saat blocking (loop selama hold block)
-    BlockHold = "rbxassetid://121918883757512",
+    BlockHold = "rbxassetid://112133536835914",
     
     -- Animasi saat berhasil block hit (optional, single play)
     BlockSuccess = nil,
@@ -25,28 +25,38 @@ AnimationConfig.Block = {
 AnimationConfig.Attack = {
     -- Combo attacks (urutan)
     Combo = {
-        [1] = "rbxassetid://81442291322583",
-        [2] = "rbxassetid://87048626485725",
+        [1] = "rbxassetid://120065242609550",
+        [2] = "rbxassetid://90883724537708",
+        [3] = "rbxassetid://73965882078897",
+        [4] = "rbxassetid://133885184210256",
     },
     
     -- Animasi saat terkena hit (sesuai dengan attack combo)
     -- Ini adalah "paired animation" yang play di korban
     Hit = {
-        [1] = "rbxassetid://133411118324472",
-        [2] = "rbxassetid://133411118324472",
-        [3] = "rbxassetid://133411118324472",
+        [1] = "rbxassetid://80025712607456",
+        [2] = "rbxassetid://84510747822815",
+        [3] = "rbxassetid://80025712607456",  -- fallback ke Hit 1
     },
 }
 
 -- ============================================
 -- HEAVY ATTACK ANIMATIONS
 -- ============================================
+-- Heavy attack kini memiliki array Combo (seperti light attack).
+-- Tambahkan animasi baru di slot [2], [3], dst kapan saja.
 AnimationConfig.HeavyAttack = {
-    -- Animasi heavy attack
-    Attack = "rbxassetid://121358890086382",
+    -- Heavy attack combos
+    Combo = {
+        [1] = "rbxassetid://112697395783024",
+        -- [2] = "rbxassetid://XXXXXXXXXX",  -- tambahkan jika ada
+    },
     
-    -- Animasi saat terkena heavy attack
-    Hit = "rbxassetid://133411118324472",
+    -- Animasi saat terkena heavy attack (array, bisa lebih dari 1)
+    Hit = {
+        [1] = "rbxassetid://80025712607456",
+        [2] = "rbxassetid://84510747822815",
+    },
 }
 
 -- ============================================
@@ -67,8 +77,11 @@ AnimationConfig.Dodge = {
 -- IDLE & STANCE ANIMATIONS
 -- ============================================
 AnimationConfig.Idle = {
-    -- Idle stance saat dalam fight mode
-    FightIdle = nil,
+    -- Idle stance saat dalam fight mode (looped)
+    FightIdle = "rbxassetid://91430470659333",
+    
+    -- Walk saat dalam fight mode (looped)
+    FightWalk = "rbxassetid://128705418031680",
     
     -- Normal idle (diluar fight)
     NormalIdle = nil,

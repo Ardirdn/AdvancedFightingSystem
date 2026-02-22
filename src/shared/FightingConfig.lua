@@ -103,9 +103,13 @@ FightingConfig.Camera = {
     -- X = camera offset to RIGHT (positive = player on LEFT of screen)
     -- Y = camera height above player
     -- Z = camera distance behind player
-    FightCameraOffset = Vector3.new(7, 4, 8), -- Player more on LEFT, closer camera
+    FightCameraOffset = Vector3.new(2, 2, 20), -- Player more on LEFT, closer camera
     FightCameraDistance = 30, -- Max kamera zoom distance
-    CameraLerpSpeed = 0.5, -- Camera follow speed (higher = snappier, 0.1-0.5)
+    CameraLerpSpeed = 0.08, -- Camera follow speed (higher = snappier, 0.1-0.5)
+    
+    -- Field of View
+    BaseFOV = 70,        -- FOV normal saat tidak fight
+    FightFieldOfView = 35, -- FOV saat fight mode (lebih kecil = lebih cinematic)
     
     -- Player rotation lock
     LockPlayerRotation = true, -- Apakah player otomatis menghadap lawan?
@@ -125,27 +129,27 @@ FightingConfig.Camera = {
     
     -- Shake saat TERKENA HIT
     HitShake = {
-        Amplitude = 0.5,
+        Amplitude = 0.15,   -- was 0.5, reduced 70%
         Frequency = 3,
         Duration = 0.5,
-        ZoomAmount = 1.5,  -- Zoom in effect saat hit
+        ZoomAmount = 0,
     },
     
     -- Shake saat BLOCK berhasil
     BlockShake = {
-        Amplitude = 0.15,
+        Amplitude = 0.05,   -- was 0.15, reduced 70%
         Frequency = 3,
         Duration = 0.5,
-        ZoomAmount = 0.5,  -- Subtle zoom saat block
+        ZoomAmount = 0,
     },
     
     
     -- Shake saat MENYERANG (feedback untuk attacker)
     AttackShake = {
-        Amplitude = 0.5,
+        Amplitude = 0.15,   -- was 0.5, reduced 70%
         Frequency = 2,
         Duration = 0.3,
-        ZoomAmount = 0.8,  -- Medium zoom saat menyerang
+        ZoomAmount = 0,
     },
     
     -- ============================================

@@ -71,6 +71,14 @@ local CameraShakeEvent = FightingRemotes:WaitForChild("CameraShake")
 print("✅ [FightingClient] All remote events loaded")
 
 -- ============================================
+-- DEBUG CONFIGURATION
+-- ============================================
+-- Set DEBUG_MODE = true to test animations & buttons WITHOUT being in an arena.
+-- Mobile buttons become clickable everywhere, isRoundActive check is bypassed.
+-- Set back to FALSE before publishing to production!
+local DEBUG_MODE = true
+
+-- ============================================
 -- STATE VARIABLES
 -- ============================================
 
@@ -88,9 +96,17 @@ end
 local isBlocking = false
 local isDodging = false
 local isAttacking = false
-local comboStep = 1
+local comboStep = 1            -- light attack combo index
+local heavyComboStep = 1       -- heavy attack combo index
 local lastAttackTime = 0
-local heavyAttackCooldown = 0
+local heavyAttackCooldown = 0  -- tick() timestamp when heavy cooldown expires
+local dodgeCooldownEnd = 0     -- tick() timestamp when dodge cooldown expires
+
+-- Debug dummy
+local debugDummy = nil           -- Model ref set when H spawns a dummy
+local SpawnDebugDummyEvent = nil -- fetched in DEBUG_MODE block
+local HitDebugDummyEvent   = nil -- fetched in DEBUG_MODE block
+local _cameraShakeFn       = nil -- forward-ref: assigned after cameraShake is defined
 
 -- Stats (received from server)
 local myHealth = 100
@@ -103,6 +119,15 @@ local animationTracks = {}
 
 -- Mobile controls
 local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+-- ============================================
+-- DEBUG HELPER
+-- ============================================
+-- Returns true if the player is allowed to perform combat actions.
+-- In DEBUG_MODE this is always true; otherwise requires an active round.
+local function canAct()
+    return isRoundActive or DEBUG_MODE
+end
 
 -- ============================================
 -- ANIMATION LOADING
@@ -148,37 +173,36 @@ local function loadAnimations()
         )
     end
     
-    -- Heavy attack
-    animationTracks.HeavyAttack = AnimationConfig.LoadAnimation(
+    -- Heavy attack combos (array, sama seperti light attack)
+    animationTracks.HeavyAttack = {}
+    for i, animId in ipairs(AnimationConfig.HeavyAttack.Combo) do
+        animationTracks.HeavyAttack[i] = AnimationConfig.LoadAnimation(
+            Animator,
+            animId,
+            false,
+            Enum.AnimationPriority.Action
+        )
+    end
+
+    -- Heavy hit animations (array)
+    animationTracks.HeavyHit = {}
+    for i, animId in ipairs(AnimationConfig.HeavyAttack.Hit) do
+        animationTracks.HeavyHit[i] = AnimationConfig.LoadAnimation(
+            Animator,
+            animId,
+            false,
+            Enum.AnimationPriority.Action2
+        )
+    end
+
+    -- Fight walk animation (looped, lower priority saat fight)
+    animationTracks.FightWalk = AnimationConfig.LoadAnimation(
         Animator,
-        AnimationConfig.HeavyAttack.Attack,
-        false,
-        Enum.AnimationPriority.Action
-    )
-    
-    animationTracks.HeavyHit = AnimationConfig.LoadAnimation(
-        Animator,
-        AnimationConfig.HeavyAttack.Hit,
-        false,
-        Enum.AnimationPriority.Action2
-    )
-    
-    -- Dodge animations (optional)
-    animationTracks.Dodge = AnimationConfig.LoadAnimation(
-        Animator,
-        AnimationConfig.Dodge.Universal,
-        false,
-        Enum.AnimationPriority.Action
-    )
-    
-    -- Idle
-    animationTracks.FightIdle = AnimationConfig.LoadAnimation(
-        Animator,
-        AnimationConfig.Idle.FightIdle,
+        AnimationConfig.Idle.FightWalk,
         true,
-        Enum.AnimationPriority.Idle
+        Enum.AnimationPriority.Movement
     )
-    
+
     print("🎬 [FightingClient] Animations loaded")
 end
 
@@ -372,6 +396,57 @@ local function stopAllCombatAnimations()
     end
 end
 
+-- ============================================
+-- DEBUG DUMMY HIT HELPER
+-- ============================================
+-- Checks if debugDummy is within attack range and registers a hit on it.
+-- Only active when DEBUG_MODE = true.
+local function hitDebugDummy(attackType)
+    if not DEBUG_MODE then return end
+    if not debugDummy or not debugDummy.Parent then return end
+    local dHRP = debugDummy:FindFirstChild("HumanoidRootPart")
+    if not dHRP then return end
+
+    local cfg  = attackType == "Heavy"
+                 and FightingConfig.Combat.HeavyAttack
+                 or  FightingConfig.Combat.LightAttack
+    local dist = (HRP.Position - dHRP.Position).Magnitude
+
+    if dist <= (cfg.Range + 3) then   -- +3 studs buffer (dummy is stationary)
+        print("🎯 [DEBUG] Hit dummy with", attackType, "| dist:", string.format("%.1f", dist))
+
+        -- Audio + screen shake feedback (client only)
+        playHitSound(attackType == "Heavy" and "Heavy" or "Light", nil)
+        local sh = FightingConfig.Camera.AttackShake
+        if _cameraShakeFn then   -- assigned later once cameraShake is defined
+            _cameraShakeFn(sh.Amplitude, sh.Frequency, sh.Duration, sh.ZoomAmount, false)
+        end
+
+        -- Tell server to register hit (shows HP on billboard)
+        if HitDebugDummyEvent then
+            HitDebugDummyEvent:FireServer(attackType)
+        end
+    end
+end
+
+-- ============================================
+-- ATTACKER PUSH FORWARD
+-- ============================================
+-- Saat hit connect, attacker melaju 3 stud ke depan (ke arah musuh).
+-- Pakai BodyVelocity agar mentok di tembok.
+local function pushAttackerForward()
+    if not HRP then return end
+    task.spawn(function()
+        local bv = Instance.new("BodyVelocity")
+        bv.Velocity  = HRP.CFrame.LookVector * 35   -- 35 stud/s ≈ 3 stud dalam 0.09s
+        bv.MaxForce  = Vector3.new(1e6, 0, 1e6)     -- horizontal only
+        bv.P         = 1e6
+        bv.Parent    = HRP
+        task.wait(0.09)
+        if bv and bv.Parent then bv:Destroy() end
+    end)
+end
+
 local function performLightAttack()
     if not _cacheEnabled() then return end
     print("👊 [COMBAT] performLightAttack() called")
@@ -380,21 +455,21 @@ local function performLightAttack()
     print("   - isDodging:", isDodging)
     print("   - isAttacking:", isAttacking)
     
-    if not isRoundActive then 
-        print("   ❌ BLOCKED: Round not active")
-        return 
+    if not canAct() then
+        print("   ❌ BLOCKED: Round not active (and DEBUG_MODE is off)")
+        return
     end
-    if isBlocking then 
+    if isBlocking then
         print("   ❌ BLOCKED: Currently blocking")
-        return 
+        return
     end
-    if isDodging then 
+    if isDodging then
         print("   ❌ BLOCKED: Currently dodging")
-        return 
+        return
     end
-    if isAttacking then 
+    if isAttacking then
         print("   ❌ BLOCKED: Currently attacking")
-        return 
+        return
     end
     
     local config = FightingConfig.Combat.LightAttack
@@ -406,16 +481,16 @@ local function performLightAttack()
     end
     
     -- Check cooldown
-    if currentTime - lastAttackTime < config.Cooldown then 
+    if currentTime - lastAttackTime < config.Cooldown then
         print("   ❌ BLOCKED: On cooldown")
-        return 
+        return
     end
     
-    -- Check stamina (basic client check, server will validate)
+    -- Check stamina (skipped in DEBUG_MODE)
     print("   - myStamina:", myStamina, "/ required:", config.StaminaCost)
-    if myStamina < config.StaminaCost then 
+    if not DEBUG_MODE and myStamina < config.StaminaCost then
         print("   ❌ BLOCKED: Not enough stamina")
-        return 
+        return
     end
     
     print("   ✅ All checks passed! Executing attack...")
@@ -435,9 +510,11 @@ local function performLightAttack()
         -- Wait for windup then fire damage event
         local windupTime = attackTrack.Length * 0.3
         task.delay(windupTime, function()
+            -- Always trigger sound + shake + dummy hit (debug bypasses isRoundActive)
+            playHitSound("Light", nil)
+            pushAttackerForward()          -- attacker maju 3 stud ke depan
+            hitDebugDummy("Light")
             if isRoundActive then
-                -- Play hit sound locally (no delay)
-                playHitSound("Light", nil)
                 DealDamageEvent:FireServer("Light", comboStep)
             end
         end)
@@ -448,10 +525,10 @@ local function performLightAttack()
             conn:Disconnect()
             isAttacking = false
             
-            -- Advance combo
-            comboStep = comboStep + 1
-            if comboStep > config.MaxComboHits then
-                comboStep = 1
+            -- Advance combo: flexible, pakai jumlah animasi yg di-load (bukan MaxComboHits)
+            local numAnims = #animationTracks.Attack
+            if numAnims > 0 then
+                comboStep = (comboStep % numAnims) + 1
             end
         end)
     else
@@ -469,25 +546,25 @@ local function performHeavyAttack()
     print("   - isDodging:", isDodging)
     print("   - isAttacking:", isAttacking)
     
-    if not isRoundActive then print("   ❌ Not in active round") return end
+    if not canAct() then print("   ❌ Not in active round (and DEBUG_MODE is off)") return end
     if isBlocking then print("   ❌ Currently blocking") return end
-    if isDodging then print("   ❌ Currently dodging") return end
+    if isDodging  then print("   ❌ Currently dodging")  return end
     if isAttacking then print("   ❌ Currently attacking") return end
     
     local config = FightingConfig.Combat.HeavyAttack
     local currentTime = tick()
     
     -- Check cooldown
-    if currentTime < heavyAttackCooldown then 
+    if currentTime < heavyAttackCooldown then
         print("   ❌ On cooldown")
-        return 
+        return
     end
     
-    -- Check stamina
+    -- Check stamina (skipped in DEBUG_MODE)
     print("   - myStamina:", myStamina, "/ required:", config.StaminaCost)
-    if myStamina < config.StaminaCost then 
+    if not DEBUG_MODE and myStamina < config.StaminaCost then
         print("   ❌ Not enough stamina")
-        return 
+        return
     end
     
     print("   ✅ All checks passed! Executing heavy attack...")
@@ -495,18 +572,21 @@ local function performHeavyAttack()
     isAttacking = true
     heavyAttackCooldown = currentTime + config.Cooldown
     
-    -- Play heavy attack animation
-    local heavyTrack = animationTracks.HeavyAttack
+    -- Pick heavy attack track from combo array
+    local numHeavy  = #animationTracks.HeavyAttack
+    local heavyTrack = numHeavy > 0 and animationTracks.HeavyAttack[heavyComboStep] or nil
+
     if heavyTrack then
         stopAllCombatAnimations()
         heavyTrack:Play()
         
         -- Charge time before dealing damage
         task.delay(config.ChargeTime, function()
+            playHitSound("Heavy", nil)
+            pushAttackerForward()
+            hitDebugDummy("Heavy")
             if isRoundActive then
-                -- Play hit sound locally (no delay)
-                playHitSound("Heavy", nil)
-                DealDamageEvent:FireServer("Heavy", 0)
+                DealDamageEvent:FireServer("Heavy", heavyComboStep)
             end
         end)
         
@@ -514,10 +594,13 @@ local function performHeavyAttack()
         conn = heavyTrack.Stopped:Connect(function()
             conn:Disconnect()
             isAttacking = false
+            -- Advance heavy combo step
+            heavyComboStep = (heavyComboStep % math.max(1, numHeavy)) + 1
         end)
     else
         isAttacking = false
-        DealDamageEvent:FireServer("Heavy", 0)
+        DealDamageEvent:FireServer("Heavy", heavyComboStep)
+        heavyComboStep = (heavyComboStep % math.max(1, #animationTracks.HeavyAttack)) + 1
     end
 end
 
@@ -529,18 +612,18 @@ local function startBlock()
     print("   - isDodging:", isDodging)
     print("   - isBlocking:", isBlocking)
     
-    if not isRoundActive then print("   ❌ Not in active round") return end
+    if not canAct() then print("   ❌ Not in active round (and DEBUG_MODE is off)") return end
     if isAttacking then print("   ❌ Currently attacking") return end
-    if isDodging then print("   ❌ Currently dodging") return end
-    if isBlocking then print("   ❌ Already blocking") return end
+    if isDodging   then print("   ❌ Currently dodging")  return end
+    if isBlocking  then print("   ❌ Already blocking")   return end
     
     local config = FightingConfig.Combat.Block
     
-    -- Check stamina
+    -- Check stamina (skipped in DEBUG_MODE)
     print("   - myStamina:", myStamina, "/ required:", config.StaminaCost)
-    if myStamina < config.StaminaCost then 
+    if not DEBUG_MODE and myStamina < config.StaminaCost then
         print("   ❌ Not enough stamina")
-        return 
+        return
     end
     
     print("   ✅ Block started!")
@@ -569,17 +652,17 @@ end
 
 local function performDodge(direction)
     if not _cacheEnabled() then return end
-    if not isRoundActive or isBlocking or isAttacking or isDodging then return end
+    if not canAct() or isBlocking or isAttacking or isDodging then return end
     
     local config = FightingConfig.Combat.Dodge
     
-    -- Check stamina
-    if myStamina < config.StaminaCost then return end
+    -- Check stamina (skipped in DEBUG_MODE)
+    if not DEBUG_MODE and myStamina < config.StaminaCost then return end
     
     isDodging = true
     DodgeEvent:FireServer(direction)
     
-    -- Calculate movement
+    -- Calculate movement direction
     local moveDir = Vector3.new(0, 0, 0)
     
     if direction == "Forward" then
@@ -592,6 +675,9 @@ local function performDodge(direction)
         moveDir = HRP.CFrame.RightVector
     end
     
+    -- Normalize direction on horizontal plane
+    moveDir = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
+    
     -- Play dodge animation
     local dodgeTrack = animationTracks.Dodge
     if dodgeTrack then
@@ -599,25 +685,64 @@ local function performDodge(direction)
         dodgeTrack:Play()
     end
     
-    -- Apply movement
+    -- ============================================
+    -- COLLISION-AWARE DODGE USING RAYCAST
+    -- ============================================
     local startPos = HRP.Position
-    local targetPos = startPos + moveDir * config.Distance
+    local desiredDistance = config.Distance
+    local actualDistance = desiredDistance
     
-    local dodgeTween = TweenService:Create(
-        HRP,
-        TweenInfo.new(config.Duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-        { CFrame = CFrame.new(targetPos) * CFrame.Angles(0, math.rad(HRP.Orientation.Y), 0) }
-    )
+    -- Raycast parameters - ignore the player's own character
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    raycastParams.FilterDescendantsInstances = {Character}
+    raycastParams.IgnoreWater = true
     
-    dodgeTween:Play()
-    dodgeTween.Completed:Connect(function()
+    -- Cast ray from character center in dodge direction
+    -- Use character's approximate radius as buffer (about 2 studs)
+    local characterRadius = 2
+    local rayOrigin = startPos
+    local rayDirection = moveDir * (desiredDistance + characterRadius)
+    
+    local rayResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+    
+    if rayResult then
+        -- Hit something! Calculate safe distance
+        local distanceToHit = (rayResult.Position - startPos).Magnitude
+        -- Subtract character radius to prevent clipping
+        actualDistance = math.max(0, distanceToHit - characterRadius - 0.5)
+        print("💨 [DODGE] Collision detected! Distance limited from", desiredDistance, "to", actualDistance)
+    end
+    
+    -- Calculate final target position
+    local targetPos = startPos + moveDir * actualDistance
+    
+    -- Only tween if there's actually distance to travel
+    if actualDistance > 0.5 then
+        local dodgeTween = TweenService:Create(
+            HRP,
+            TweenInfo.new(config.Duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            { CFrame = CFrame.new(targetPos) * CFrame.Angles(0, math.rad(HRP.Orientation.Y), 0) }
+        )
+        
+        dodgeTween:Play()
+        dodgeTween.Completed:Connect(function()
+            isDodging = false
+        end)
+    else
+        -- No room to dodge, just reset immediately
+        print("💨 [DODGE] No room to dodge - blocked by collision")
         isDodging = false
-    end)
+    end
     
     -- Also reset after duration just in case
     task.delay(config.Duration + 0.1, function()
         isDodging = false
     end)
+
+    -- Reset combo saat dodge (player interrupted)
+    comboStep = 1
+    heavyComboStep = 1
 end
 
 -- ============================================
@@ -629,6 +754,7 @@ local fightCameraConn = nil
 local previousCameraCFrame = nil
 local previousCameraSubject = nil
 local previousAutoRotate = nil
+
 
 local function startFightCamera()
     if fightCameraActive then return end
@@ -652,6 +778,12 @@ local function startFightCamera()
     -- Set camera to scriptable mode for full control
     Camera.CameraType = Enum.CameraType.Scriptable
     
+    -- Tween FOV to fight mode
+    local fightFOV = FightingConfig.Camera.FightFieldOfView or 60
+    TweenService:Create(Camera, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        FieldOfView = fightFOV
+    }):Play()
+    
     -- Store current player rotation for smooth interpolation
     local currentPlayerYRotation = 0
     if HRP then
@@ -670,6 +802,11 @@ local function startFightCamera()
             if opponentHRP then
                 opponentPos = opponentHRP.Position
             end
+        end
+        -- DEBUG: fall back to dummy when no real opponent
+        if not opponentPos and debugDummy and debugDummy.Parent then
+            local dHRP = debugDummy:FindFirstChild("HumanoidRootPart")
+            if dHRP then opponentPos = dHRP.Position end
         end
         
         -- Calculate look direction (toward opponent or forward)
@@ -758,6 +895,11 @@ local function stopFightCamera()
     Player.CameraMinZoomDistance = 0.5
     Player.CameraMaxZoomDistance = 400
     
+    -- Restore FOV back to base
+    TweenService:Create(Camera, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        FieldOfView = BASE_FOV
+    }):Play()
+    
     local transitionConn
     transitionConn = RunService.RenderStepped:Connect(function()
         local elapsed = tick() - startTime
@@ -788,9 +930,9 @@ local shakeAmplitude = 0   -- Studs - how far camera moves
 local shakeFrequency = 0   -- Hz - oscillations per second  
 local shakeDuration = 0    -- Seconds
 local shakeZoomAmount = 0  -- Zoom in amount
-local BASE_FOV = 70        -- Base FOV (constant, never changes)
+local BASE_FOV = FightingConfig.Camera.BaseFOV or 70  -- Base FOV saat tidak fight
 
--- Shake update function bound to RenderStep
+-- Shake update function bound to RenderStep (CFrame positional offset only — does NOT touch FOV)
 local function updateCameraShake()
     if not isShaking then return end
     
@@ -798,8 +940,6 @@ local function updateCameraShake()
     
     if elapsed >= shakeDuration then
         isShaking = false
-        -- Restore FOV to base
-        TweenService:Create(Camera, TweenInfo.new(0.15), {FieldOfView = BASE_FOV}):Play()
         RunService:UnbindFromRenderStep("FightingCameraShake")
         return
     end
@@ -807,34 +947,45 @@ local function updateCameraShake()
     -- Decreasing intensity over time (ease out)
     local progress = elapsed / shakeDuration
     local currentAmplitude = shakeAmplitude * (1 - progress)
-    local currentZoom = shakeZoomAmount * (1 - progress)
     
     -- Convert frequency (Hz) to angular velocity
     local time = tick()
     local angularVelocity = shakeFrequency * 2 * math.pi
     
-    -- Sinusoidal shake
+    -- Sinusoidal CFrame offset (no FOV changes)
     local offsetX = math.sin(time * angularVelocity) * currentAmplitude
     local offsetY = math.cos(time * angularVelocity * 1.1) * currentAmplitude
-    
-    -- Apply offset to camera
-    local shakeOffset = Vector3.new(offsetX, offsetY, 0)
-    Camera.CFrame = Camera.CFrame * CFrame.new(shakeOffset)
-    
-    -- Apply zoom effect (lower FOV = zoom in) - FROM BASE, not current
-    if shakeZoomAmount > 0 then
-        Camera.FieldOfView = BASE_FOV - currentZoom
-    end
+    Camera.CFrame = Camera.CFrame * CFrame.new(offsetX, offsetY, 0)
 end
 
 local function cameraShake(amplitude, frequency, duration, zoomAmount, isHitEffect)
+    -- ── FOV PUNCH EFFECT ──────────────────────────────────────────────────────
+    -- Quick FOV dip on every hit/attack for cinematic impact feel.
+    -- Only active when fight camera is running; never alters BASE_FOV.
+    if fightCameraActive then
+        local fightFOV  = FightingConfig.Camera.FightFieldOfView or 60
+        local dipAmount = math.random(0, 1) == 0 and 2 or 5   -- random -5 or -10
+        local dipFOV    = fightFOV - dipAmount
+        local punchIn   = 0.06
+        local springOut = duration * 0.8
+
+        TweenService:Create(Camera, TweenInfo.new(punchIn, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            FieldOfView = dipFOV
+        }):Play()
+        task.delay(punchIn, function()
+            TweenService:Create(Camera, TweenInfo.new(springOut, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                FieldOfView = fightFOV
+            }):Play()
+        end)
+    end
+
     -- Set shake parameters
-    shakeAmplitude = amplitude
-    shakeFrequency = frequency
-    shakeDuration = duration
+    shakeAmplitude  = amplitude
+    shakeFrequency  = frequency
+    shakeDuration   = duration
     shakeZoomAmount = zoomAmount or 0
-    shakeStartTime = tick()
-    -- DON'T read from Camera.FieldOfView - use BASE_FOV constant
+    shakeStartTime  = tick()
+
     
     print("📷 [SHAKE] Started: amp=" .. amplitude .. ", freq=" .. frequency .. "Hz, dur=" .. duration .. "s, zoom=" .. (zoomAmount or 0))
     
@@ -897,6 +1048,8 @@ local function cameraShake(amplitude, frequency, duration, zoomAmount, isHitEffe
         end
     end
 end
+-- Forward-ref assignment: hitDebugDummy can now find cameraShake via _cameraShakeFn
+_cameraShakeFn = cameraShake
 
 -- ============================================
 -- INPUT HANDLING
@@ -1023,211 +1176,130 @@ UserInputService.InputEnded:Connect(function(input, gameProcessed)
 end)
 
 -- ============================================
--- ACTION BUTTONS (VISIBLE ON ALL PLATFORMS)
+-- MOBILE BUTTONS (ControlsPanelMobile in StarterGui > FightingHUD)
+-- ============================================
+--
+-- Structure expected:
+--   FightingHUD > ControlsPanelMobile
+--       Frame_LightAttackBtn  > ImageButton
+--       Frame_BlockBtn        > ImageButton
+--       Frame_DodgeBtn        > ImageButton
+--                               CooldownFrame > TextLabel (cooldown timer)
+--       Frame_HeavyAttackBtn  > ImageButton
+--                               CooldownFrame > TextLabel (cooldown timer)
 -- ============================================
 
-local actionButtonsUI = nil
-local attackButton = nil
-local heavyButton = nil
-local blockButton = nil
-local dodgeButton = nil
+-- Refs filled by initMobileButtons()
+local MobilePanel = nil
+local HeavyCooldownFrame = nil
+local HeavyCooldownLabel = nil
+local DodgeCooldownFrame  = nil
+local DodgeCooldownLabel  = nil
 
-local function createActionButtons()
-    local playerGui = Player:WaitForChild("PlayerGui")
-    
-    -- Check if already exists - destroy to prevent duplicates
-    local existingUI = playerGui:FindFirstChild("FightingActionButtons")
-    if existingUI then
-        existingUI:Destroy()
-    end
-    
-    -- Reset button references
-    attackButton = nil
-    heavyButton = nil
-    blockButton = nil
-    dodgeButton = nil
-    
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "FightingActionButtons"
-    screenGui.ResetOnSpawn = false
-    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    screenGui.DisplayOrder = 10
-    screenGui.Enabled = false -- Will be enabled when match starts
-    screenGui.Parent = playerGui
-    
-    actionButtonsUI = screenGui
-    
-    -- Container for action buttons (bottom right area)
-    local buttonsContainer = Instance.new("Frame")
-    buttonsContainer.Name = "ButtonsContainer"
-    buttonsContainer.Size = UDim2.new(0, 200, 0, 200)
-    buttonsContainer.Position = UDim2.new(1, -20, 0.5, 0)
-    buttonsContainer.AnchorPoint = Vector2.new(1, 0.5)
-    buttonsContainer.BackgroundTransparency = 1
-    buttonsContainer.Parent = screenGui
-    
-    -- Add UIListLayout for vertical stacking
-    local listLayout = Instance.new("UIListLayout")
-    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    listLayout.Padding = UDim.new(0, 8)
-    listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-    listLayout.Parent = buttonsContainer
-    
-    -- Check if should show clickable buttons (mobile OR debug enabled on PC)
-    local showClickableButtons = isMobile or (FightingConfig.Debug and FightingConfig.Debug.ShowButtonsOnPC)
-    
-    if showClickableButtons then
-        -- ============================================
-        -- MOBILE/DEBUG: Large clickable action buttons
-        -- ============================================
-        buttonsContainer.Size = UDim2.new(0, 220, 0, 300)
-        buttonsContainer.Position = UDim2.new(1, -20, 1, -320)
-        buttonsContainer.AnchorPoint = Vector2.new(1, 0)
-        listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-        
-        local function createMobileButton(name, text, color, layoutOrder)
-            local button = Instance.new("TextButton")
-            button.Name = name
-            button.Size = UDim2.new(1, 0, 0, 65)
-            button.LayoutOrder = layoutOrder
-            button.BackgroundColor3 = color
-            button.BackgroundTransparency = 0.15
-            button.BorderSizePixel = 0
-            button.Text = ""
-            button.AutoButtonColor = false
-            button.Parent = buttonsContainer
-            
-            local corner = Instance.new("UICorner")
-            corner.CornerRadius = UDim.new(0, 12)
-            corner.Parent = button
-            
-            local stroke = Instance.new("UIStroke")
-            stroke.Color = Color3.fromRGB(255, 255, 255)
-            stroke.Transparency = 0.6
-            stroke.Thickness = 2
-            stroke.Parent = button
-            
-            local label = Instance.new("TextLabel")
-            label.Size = UDim2.new(1, 0, 1, 0)
-            label.BackgroundTransparency = 1
-            label.Font = Enum.Font.GothamBlack
-            label.TextColor3 = Color3.fromRGB(255, 255, 255)
-            label.TextScaled = true
-            label.Text = text
-            label.TextStrokeTransparency = 0.3
-            label.Parent = button
-            
-            local textConstraint = Instance.new("UITextSizeConstraint")
-            textConstraint.MaxTextSize = 28
-            textConstraint.MinTextSize = 14
-            textConstraint.Parent = label
-            
-            return button
+-- ── Helper: run cooldown display loop for a given button ──────────────────
+local function runCooldownDisplay(cooldownFrame, cooldownLabel, getCooldownEnd)
+    if not cooldownFrame or not cooldownLabel then return end
+    cooldownFrame.Visible = true
+
+    task.spawn(function()
+        while true do
+            local remaining = getCooldownEnd() - tick()
+            if remaining <= 0 then
+                cooldownFrame.Visible = false
+                cooldownLabel.Text = ""
+                break
+            end
+            cooldownLabel.Text = string.format("%.1f", remaining)
+            task.wait(0.05)
         end
-        
-        attackButton = createMobileButton("AttackButton", "PUNCH", Color3.fromRGB(200, 60, 60), 1)
-        heavyButton = createMobileButton("HeavyButton", "HEAVY", Color3.fromRGB(230, 130, 40), 2)
-        blockButton = createMobileButton("BlockButton", "BLOCK", Color3.fromRGB(60, 130, 200), 3)
-        dodgeButton = createMobileButton("DodgeButton", "DODGE", Color3.fromRGB(60, 180, 80), 4)
-        
+    end)
+end
+
+-- ── initMobileButtons: connect StarterGui mobile buttons to actions ───────
+local function initMobileButtons()
+    local PlayerGui = Player:WaitForChild("PlayerGui", 10)
+    if not PlayerGui then
+        warn("❌ [FightingClient] PlayerGui not found")
+        return
+    end
+
+    local FightingHUD = PlayerGui:WaitForChild("FightingHUD", 10)
+    if not FightingHUD then
+        warn("❌ [FightingClient] FightingHUD not found in PlayerGui")
+        return
+    end
+
+    MobilePanel = FightingHUD:WaitForChild("ControlsPanelMobile", 5)
+    if not MobilePanel then
+        warn("❌ [FightingClient] ControlsPanelMobile not found in FightingHUD")
+        return
+    end
+
+    -- ── Mobile panel: visible on ALL platforms (PC + Android) ───────────────
+    -- StartMatchEvent will show it; EndMatchEvent will hide it.
+    -- Keep true here so it's visible in Studio without starting a match.
+    MobilePanel.Visible = true
+
+    -- ── Light Attack ───────────────────────────────────────────────────────
+    local Frame_LightAttackBtn = MobilePanel:FindFirstChild("Frame_LightAttackBtn")
+    if Frame_LightAttackBtn then
+        local LightBtn = Frame_LightAttackBtn:FindFirstChildOfClass("ImageButton")
+        if LightBtn then
+            LightBtn.MouseButton1Click:Connect(function()
+                if canAct() then
+                    print("📱 [MOBILE] Light Attack button pressed")
+                    performLightAttack()
+                end
+            end)
+            print("✅ [FightingClient] LightAttack mobile button connected")
+        else
+            warn("⚠️ [FightingClient] ImageButton not found inside Frame_LightAttackBtn")
+        end
     else
-        -- ============================================
-        -- PC: Info-only keybind display (non-clickable)
-        -- ============================================
-        buttonsContainer.Size = UDim2.new(0, 160, 0, 180)
-        
-        local function createKeybindInfo(keyText, actionText, color, layoutOrder)
-            local frame = Instance.new("Frame")
-            frame.Name = actionText
-            frame.Size = UDim2.new(1, 0, 0, 38)
-            frame.LayoutOrder = layoutOrder
-            frame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-            frame.BackgroundTransparency = 0.3
-            frame.BorderSizePixel = 0
-            frame.Parent = buttonsContainer
-            
-            local corner = Instance.new("UICorner")
-            corner.CornerRadius = UDim.new(0, 8)
-            corner.Parent = frame
-            
-            -- Key badge
-            local keyBadge = Instance.new("Frame")
-            keyBadge.Size = UDim2.new(0, 55, 0, 28)
-            keyBadge.Position = UDim2.new(0, 5, 0.5, 0)
-            keyBadge.AnchorPoint = Vector2.new(0, 0.5)
-            keyBadge.BackgroundColor3 = color
-            keyBadge.BorderSizePixel = 0
-            keyBadge.Parent = frame
-            
-            local badgeCorner = Instance.new("UICorner")
-            badgeCorner.CornerRadius = UDim.new(0, 6)
-            badgeCorner.Parent = keyBadge
-            
-            local keyLabel = Instance.new("TextLabel")
-            keyLabel.Size = UDim2.new(1, 0, 1, 0)
-            keyLabel.BackgroundTransparency = 1
-            keyLabel.Font = Enum.Font.GothamBlack
-            keyLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-            keyLabel.TextScaled = true
-            keyLabel.Text = keyText
-            keyLabel.Parent = keyBadge
-            
-            local keyConstraint = Instance.new("UITextSizeConstraint")
-            keyConstraint.MaxTextSize = 14
-            keyConstraint.MinTextSize = 8
-            keyConstraint.Parent = keyLabel
-            
-            -- Action name
-            local actionLabel = Instance.new("TextLabel")
-            actionLabel.Size = UDim2.new(0, 85, 1, 0)
-            actionLabel.Position = UDim2.new(0, 65, 0, 0)
-            actionLabel.BackgroundTransparency = 1
-            actionLabel.Font = Enum.Font.GothamBold
-            actionLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
-            actionLabel.TextScaled = true
-            actionLabel.TextXAlignment = Enum.TextXAlignment.Left
-            actionLabel.Text = actionText
-            actionLabel.Parent = frame
-            
-            local actionConstraint = Instance.new("UITextSizeConstraint")
-            actionConstraint.MaxTextSize = 16
-            actionConstraint.MinTextSize = 10
-            actionConstraint.Parent = actionLabel
-            
-            return frame
+        warn("⚠️ [FightingClient] Frame_LightAttackBtn not found")
+    end
+
+    -- ── Block ──────────────────────────────────────────────────────────────
+    local Frame_BlockBtn = MobilePanel:FindFirstChild("Frame_BlockBtn")
+    if Frame_BlockBtn then
+        local BlockBtn = Frame_BlockBtn:FindFirstChildOfClass("ImageButton")
+        if BlockBtn then
+            BlockBtn.MouseButton1Down:Connect(function()
+                if canAct() then
+                    print("📱 [MOBILE] Block button pressed")
+                    startBlock()
+                end
+            end)
+            BlockBtn.MouseButton1Up:Connect(function()
+                stopBlock()
+            end)
+            print("✅ [FightingClient] Block mobile button connected")
+        else
+            warn("⚠️ [FightingClient] ImageButton not found inside Frame_BlockBtn")
         end
-        
-        createKeybindInfo("LMB", "Attack", Color3.fromRGB(180, 60, 60), 1)
-        createKeybindInfo("RMB", "Heavy", Color3.fromRGB(200, 120, 40), 2)
-        createKeybindInfo("F", "Block", Color3.fromRGB(60, 130, 180), 3)
-        createKeybindInfo("SPACE", "Dodge", Color3.fromRGB(60, 160, 80), 4)
+    else
+        warn("⚠️ [FightingClient] Frame_BlockBtn not found")
     end
-    
-    -- Connect button events (when clickable buttons are shown)
-    if showClickableButtons and attackButton then
-        attackButton.MouseButton1Click:Connect(function()
-            if isRoundActive then performLightAttack() end
-        end)
-    end
-    
-    if showClickableButtons and heavyButton then
-        heavyButton.MouseButton1Click:Connect(function()
-            if isRoundActive then performHeavyAttack() end
-        end)
-    end
-    
-    if showClickableButtons and blockButton then
-        blockButton.MouseButton1Down:Connect(function()
-            if isRoundActive then startBlock() end
-        end)
-        blockButton.MouseButton1Up:Connect(function()
-            stopBlock()
-        end)
-    end
-    
-    if showClickableButtons and dodgeButton then
-        dodgeButton.MouseButton1Click:Connect(function()
-            if isRoundActive then
+
+    -- ── Dodge (with cooldown display) ──────────────────────────────────────
+    local Frame_DodgeBtn = MobilePanel:FindFirstChild("Frame_DodgeBtn")
+    if Frame_DodgeBtn then
+        local DodgeBtn = Frame_DodgeBtn:FindFirstChildOfClass("ImageButton")
+        DodgeCooldownFrame = Frame_DodgeBtn:FindFirstChild("CooldownFrame")
+        if DodgeCooldownFrame then
+            DodgeCooldownLabel = DodgeCooldownFrame:FindFirstChildOfClass("TextLabel")
+            DodgeCooldownFrame.Visible = false  -- hidden by default at game start
+        end
+
+        if DodgeBtn then
+            DodgeBtn.MouseButton1Click:Connect(function()
+                if not canAct() then return end
+                if tick() < dodgeCooldownEnd then
+                    print("📱 [MOBILE] Dodge on cooldown")
+                    return
+                end
+
+                -- Determine dodge direction from held movement keys
                 local direction = "Backward"
                 for keyCode, dir in pairs(movementKeys) do
                     if pressedKeys[keyCode] then
@@ -1235,30 +1307,102 @@ local function createActionButtons()
                         break
                     end
                 end
+
+                print("📱 [MOBILE] Dodge button pressed:", direction)
                 performDodge(direction)
-            end
-        end)
+
+                -- Set dodge cooldown (use Duration from config, fallback 1s)
+                local dodgeDuration = (FightingConfig.Combat and FightingConfig.Combat.Dodge and FightingConfig.Combat.Dodge.Duration) or 1
+                dodgeCooldownEnd = tick() + dodgeDuration + 0.3  -- small buffer
+                runCooldownDisplay(DodgeCooldownFrame, DodgeCooldownLabel, function()
+                    return dodgeCooldownEnd
+                end)
+            end)
+            print("✅ [FightingClient] Dodge mobile button connected")
+        else
+            warn("⚠️ [FightingClient] ImageButton not found inside Frame_DodgeBtn")
+        end
+    else
+        warn("⚠️ [FightingClient] Frame_DodgeBtn not found")
     end
-    
-    local modeText = showClickableButtons and "CLICKABLE" or "INFO-ONLY"
-    print("🎮 [FightingClient] Action buttons created (" .. modeText .. " mode)")
+
+    -- ── Heavy Attack (with cooldown display) ───────────────────────────────
+    local Frame_HeavyAttackBtn = MobilePanel:FindFirstChild("Frame_HeavyAttackBtn")
+    if Frame_HeavyAttackBtn then
+        local HeavyBtn = Frame_HeavyAttackBtn:FindFirstChildOfClass("ImageButton")
+        HeavyCooldownFrame = Frame_HeavyAttackBtn:FindFirstChild("CooldownFrame")
+        if HeavyCooldownFrame then
+            HeavyCooldownLabel = HeavyCooldownFrame:FindFirstChildOfClass("TextLabel")
+            HeavyCooldownFrame.Visible = false  -- hidden by default at game start
+        end
+
+        if HeavyBtn then
+            HeavyBtn.MouseButton1Click:Connect(function()
+                if not canAct() then return end
+                if tick() < heavyAttackCooldown then
+                    print("📱 [MOBILE] Heavy Attack on cooldown")
+                    return
+                end
+
+                print("📱 [MOBILE] Heavy Attack button pressed")
+                performHeavyAttack()
+
+                -- heavyAttackCooldown already set inside performHeavyAttack;
+                -- start the visual countdown loop
+                task.defer(function()  -- defer so performHeavyAttack sets the value first
+                    runCooldownDisplay(HeavyCooldownFrame, HeavyCooldownLabel, function()
+                        return heavyAttackCooldown
+                    end)
+                end)
+            end)
+            print("✅ [FightingClient] HeavyAttack mobile button connected")
+        else
+            warn("⚠️ [FightingClient] ImageButton not found inside Frame_HeavyAttackBtn")
+        end
+    else
+        warn("⚠️ [FightingClient] Frame_HeavyAttackBtn not found")
+    end
+
+    print("📱 [FightingClient] Mobile buttons initialised from StarterGui FightingHUD")
 end
 
-local function showActionButtons()
-    if actionButtonsUI then
-        actionButtonsUI.Enabled = true
-        print("🎮 [FightingClient] Action buttons shown")
+-- Legacy stubs (kept so any older code that calls them doesn't error)
+local function showActionButtons() end
+local function hideActionButtons() end
+
+-- ============================================
+-- JUMP BUTTON TOGGLE (mobile Roblox TouchGui)
+-- ============================================
+--
+-- On mobile, Roblox puts a jump button inside:
+--   PlayerGui > TouchGui > TouchControlFrame > JumpButton
+-- We hide this during a fight so it doesn't overlap the attack buttons.
+-- We also set Humanoid.JumpEnabled to block keyboard/spacebar jump.
+
+local function setJumpEnabled(enabled)
+    -- 1. Toggle Roblox Humanoid jump ability
+    if Humanoid then
+        Humanoid.JumpEnabled = enabled
     end
+
+    -- 2. Show/hide the TouchGui jump button visually (mobile only)
+    task.spawn(function()
+        local playerGui = Player:WaitForChild("PlayerGui", 5)
+        if not playerGui then return end
+
+        local TouchGui = playerGui:FindFirstChild("TouchGui")
+        if not TouchGui then return end  -- desktop, skip
+
+        local TouchControlFrame = TouchGui:FindFirstChild("TouchControlFrame")
+        if not TouchControlFrame then return end
+
+        local JumpButton = TouchControlFrame:FindFirstChild("JumpButton")
+        if JumpButton then
+            JumpButton.Visible = enabled
+            print("📱 [FightingClient] JumpButton visible:", enabled)
+        end
+    end)
 end
-
-local function hideActionButtons()
-    if actionButtonsUI then
-        actionButtonsUI.Enabled = false
-        print("🎮 [FightingClient] Action buttons hidden")
-    end
-end
-
-
 -- ============================================
 -- EVENT HANDLERS
 -- ============================================
@@ -1275,19 +1419,22 @@ StartMatchEvent.OnClientEvent:Connect(function(data)
     -- Find opponent
     currentOpponent = Players:FindFirstChild(data.OpponentName)
     
-    -- Disable jumping (space is used for dodge instead)
+    -- Disable jump: blocks space-bar + hides mobile jump button
+    -- (space is used for Dodge during fight)
     if Humanoid then
         Humanoid:SetAttribute("OriginalJumpPower", Humanoid.JumpPower)
-        Humanoid.JumpPower = 0
+        Humanoid.JumpPower  = 0
         Humanoid.JumpHeight = 0
-        print("🚫 [FightingClient] Jump disabled for fight")
+    end
+    setJumpEnabled(false)   -- hides TouchGui JumpButton on mobile
+    
+    -- Show mobile action panel
+    if MobilePanel then
+        MobilePanel.Visible = true
     end
     
     -- Load animations
     loadAnimations()
-    
-    -- Show action buttons (visible on all platforms)
-    showActionButtons()
 end)
 
 EndMatchEvent.OnClientEvent:Connect(function(data)
@@ -1316,13 +1463,16 @@ EndMatchEvent.OnClientEvent:Connect(function(data)
         Humanoid.JumpPower = originalJump
         Humanoid.JumpHeight = 7.2  -- Default Roblox jump height
         Humanoid.WalkSpeed = 16    -- Default walk speed
-        Humanoid.AutoRotate = true  -- Re-enable auto rotate
-        Humanoid.PlatformStand = false  -- Re-enable control
+        Humanoid.AutoRotate = true
+        Humanoid.PlatformStand = false
         print("✅ [FightingClient] Movement re-enabled")
     end
+    setJumpEnabled(true)    -- re-shows TouchGui JumpButton on mobile
     
-    -- Hide action buttons
-    hideActionButtons()
+    -- Hide mobile action panel
+    if MobilePanel then
+        MobilePanel.Visible = false
+    end
     
     -- Stop all animations
     stopAllCombatAnimations()
@@ -1451,9 +1601,12 @@ DealDamageEvent.OnClientEvent:Connect(function(hitData)
         -- Play hit sound for victim (so they also hear it)
         playHitSound(hitData.AttackType)
         
-        -- Play hit animation (only for defender)
+        -- ── Hit animation (defender plays on their own character) ─────────────
         if hitData.AttackType == "Heavy" then
-            local hitTrack = animationTracks.HeavyHit
+            -- HeavyHit is now an array — use ComboIndex or fallback to 1
+            local idx = hitData.ComboIndex or 1
+            local hitTrack = (animationTracks.HeavyHit and animationTracks.HeavyHit[idx])
+                          or (animationTracks.HeavyHit and animationTracks.HeavyHit[1])
             if hitTrack then
                 stopAllCombatAnimations()
                 hitTrack:Play()
@@ -1464,6 +1617,46 @@ DealDamageEvent.OnClientEvent:Connect(function(hitData)
                 stopAllCombatAnimations()
                 hitTrack:Play()
             end
+        end
+
+        -- ── Pushback via BodyVelocity (respects collision — mentok di tembok) ──────
+        if HRP then
+            task.spawn(function()
+                local pushDir   = -HRP.CFrame.LookVector  -- backward = away from opponent
+                local speed     = (hitData.AttackType == "Heavy") and 60 or 45  -- studs/s  (light: 45×0.15≈6 stud)
+                local duration  = (hitData.AttackType == "Heavy") and 0.18 or 0.15
+
+                -- BodyVelocity applies constant velocity; Roblox physics stops it at walls
+                local bv = Instance.new("BodyVelocity")
+                bv.Velocity  = Vector3.new(pushDir.X * speed, 0, pushDir.Z * speed)
+                bv.MaxForce  = Vector3.new(1e6, 0, 1e6)  -- horizontal only, no Y override
+                bv.P         = 1e6
+                bv.Parent    = HRP
+
+                task.wait(duration)
+                if bv and bv.Parent then bv:Destroy() end
+            end)
+        end
+
+        -- ── Full-body red Highlight flash (Occluded = tidak nembus player) ────
+        if Character then
+            task.spawn(function()
+                local hl = Instance.new("Highlight")
+                hl.FillColor          = Color3.fromRGB(255, 40, 40)
+                hl.FillTransparency   = 0.25
+                hl.OutlineColor       = Color3.fromRGB(255, 0, 0)
+                hl.OutlineTransparency = 0.4
+                hl.DepthMode          = Enum.HighlightDepthMode.Occluded  -- respects depth, no X-ray
+                hl.Parent             = Character
+
+                task.wait(0.15)
+                TweenService:Create(hl, TweenInfo.new(0.1), {
+                    FillTransparency    = 1,
+                    OutlineTransparency = 1,
+                }):Play()
+                task.wait(0.12)
+                if hl and hl.Parent then hl:Destroy() end
+            end)
         end
     end
 end)
@@ -1518,16 +1711,103 @@ end)
 
 print("⏳ [FightingClient] Starting initialization...")
 
--- Create action buttons on start (visible on all platforms)
+-- Initialise mobile buttons from StarterGui
 local success, err = pcall(function()
-    createActionButtons()
+    initMobileButtons()
 end)
 
 if success then
-    print("✅ [FightingClient] Action buttons created successfully")
+    print("✅ [FightingClient] Mobile buttons initialised successfully")
 else
-    warn("❌ [FightingClient] Failed to create action buttons:", err)
+    warn("❌ [FightingClient] Failed to initialise mobile buttons:", err)
 end
+
+-- DEBUG MODE: load animations immediately so buttons work without a match
+if DEBUG_MODE then
+    warn("========================================")
+    warn("🐞 [DEBUG_MODE] = TRUE")
+    warn("🐞 Buttons bypass isRoundActive check.")
+    warn("🐞 Loading animations immediately for testing.")
+    warn("🐞 Camera: fight-style, follows behind character when no opponent.")
+    warn("🐞 Press H to spawn a hittable dummy NPC in front of you.")
+    warn("🐞 Set DEBUG_MODE = false before publishing!")
+    warn("========================================")
+
+    -- Fetch debug remote events (created by DebugServer.server.lua)
+    task.spawn(function()
+        SpawnDebugDummyEvent = FightingRemotes:WaitForChild("SpawnDebugDummy", 10)
+        HitDebugDummyEvent   = FightingRemotes:WaitForChild("HitDebugDummy",   10)
+        if SpawnDebugDummyEvent then
+            print("✅ [DEBUG] SpawnDebugDummy remote ready — press H to spawn dummy")
+        else
+            warn("⚠️ [DEBUG] SpawnDebugDummy remote not found — is DebugServer.server.lua in game?")
+        end
+    end)
+
+    -- H key: spawn debug dummy in front of player
+    UserInputService.InputBegan:Connect(function(input, gpe)
+        if gpe then return end
+        if input.KeyCode == Enum.KeyCode.H then
+            if SpawnDebugDummyEvent then
+                print("🎯 [DEBUG] Spawning debug dummy...")
+                SpawnDebugDummyEvent:FireServer()
+            else
+                warn("⚠️ [DEBUG] SpawnDebugDummyEvent not ready yet")
+            end
+        end
+    end)
+
+    -- Auto-track dummy reference (updates whenever H is pressed and dummy spawns)
+    task.spawn(function()
+        while DEBUG_MODE do
+            local found = workspace:FindFirstChild("DebugDummy_" .. Player.Name)
+            if found ~= debugDummy then
+                debugDummy = found
+                if debugDummy then
+                    print("🎯 [DEBUG] Dummy reference acquired:", debugDummy.Name)
+                end
+            end
+            task.wait(0.5)
+        end
+    end)
+
+    task.delay(1, function()   -- small delay so Character/Animator + UI are ready
+        -- Load animations
+        local ok2, err2 = pcall(loadAnimations)
+        if ok2 then
+            print("✅ [DEBUG] Animations loaded for offline testing")
+        else
+            warn("❌ [DEBUG] loadAnimations failed:", err2)
+        end
+
+        -- Force-enable FightingHUD so ControlsPanelMobile is visible
+        local playerGui = Player:WaitForChild("PlayerGui", 5)
+        if playerGui then
+            local hud = playerGui:FindFirstChild("FightingHUD")
+            if hud then
+                hud.Enabled = true
+                print("✅ [DEBUG] FightingHUD force-enabled")
+            else
+                warn("⚠️ [DEBUG] FightingHUD not found in PlayerGui — did you put it in StarterGui?")
+            end
+        end
+
+        -- Make sure the mobile panel is visible
+        if MobilePanel then
+            MobilePanel.Visible = true
+            print("✅ [DEBUG] ControlsPanelMobile forced visible")
+        else
+            warn("⚠️ [DEBUG] MobilePanel ref is nil — initMobileButtons may have failed")
+        end
+
+        -- Start fight camera (no opponent = follows behind character naturally)
+        startFightCamera()
+        print("📷 [DEBUG] Fight camera started for animation testing")
+    end)
+end
+
+
+
 
 -- Expose functions to global for UI script
 _G.FightingClientFunctions = {
