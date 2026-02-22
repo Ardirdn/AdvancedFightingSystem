@@ -105,7 +105,7 @@ FightingConfig.Combat = {
         
         -- Defender mundur saat dipukul (Normal)
         DefenderNormal = {
-            Distance = 4,       -- Jarak mundur biasa
+            Distance = 5,       -- Jarak mundur biasa
             Duration = 0.08,    -- Waktu tempuh (lebih cepat agar tidak bertubrukan)
             Delay = 0,          -- Langsung mundur tanpa delay
         },
