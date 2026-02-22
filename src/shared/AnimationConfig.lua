@@ -47,10 +47,17 @@ AnimationConfig.Attack = {
 -- Heavy attack kini memiliki array Combo (seperti light attack).
 -- Tambahkan animasi baru di slot [2], [3], dst kapan saja.
 AnimationConfig.HeavyAttack = {
-    -- Heavy attack combos
+    -- Heavy attack combos (Format baru menggunakan ID dan DamageTime)
     Combo = {
-        [1] = "rbxassetid://112697395783024",
-        -- [2] = "rbxassetid://XXXXXXXXXX",  -- tambahkan jika ada
+        [1] = {
+            id = "rbxassetid://112697395783024",
+            DamageTime = 0.2, -- Waktu hit / push dihitung sejak animasi dimulai (Detik ke-berapa?)
+        },
+        [2] = {
+            id = "rbxassetid://133885184210256",
+            DamageTime = 0.2, -- Waktu hit / push dihitung sejak animasi dimulai (Detik ke-berapa?)
+        },
+        
     },
     
     -- Animasi saat terkena heavy attack (array, bisa lebih dari 1)

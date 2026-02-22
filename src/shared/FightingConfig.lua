@@ -57,6 +57,9 @@ FightingConfig.Stats = {
 -- COMBAT ACTIONS CONFIGURATION
 -- ============================================
 FightingConfig.Combat = {
+    -- Jarak minimal antar pemain agar tidak bisa menembus / bertumpuk
+    MinDistance = 3,
+    
     -- Block
     Block = {
         StaminaCost = 10, -- Minimal stamina untuk block
@@ -68,8 +71,8 @@ FightingConfig.Combat = {
     -- Dodge
     Dodge = {
         StaminaCost = 10,
-        Distance = 15, -- Jarak dodge dalam studs
-        Duration = 0.5, -- Durasi animasi dodge (detik)
+        Distance = 8, -- Jarak dodge dalam studs
+        Duration = 0.15, -- Durasi animasi dodge (detik)
         InvincibilityFrames = 0.3, -- Durasi tidak bisa di-hit saat dodge
         Cooldown = 0.5,
     },
@@ -89,7 +92,7 @@ FightingConfig.Combat = {
         StaminaCost = 7,
         Damage = 10, -- Damage lebih besar
         Range = 6,
-        Cooldown = 2.0, -- Cooldown lebih lama
+        Cooldown = 1, -- Cooldown lebih lama
         ChargeTime = 0.5, -- Waktu charge sebelum attack
         BreakBlock = false, -- Apakah bisa break block?
     },
@@ -129,7 +132,7 @@ FightingConfig.Camera = {
     -- Z = camera distance behind player
     FightCameraOffset = Vector3.new(04, 2, 20), -- Player more on LEFT, closer camera
     FightCameraDistance = 30, -- Max kamera zoom distance
-    CameraLerpSpeed = 0.08, -- Camera follow speed (higher = snappier, 0.1-0.5)
+    CameraLerpSpeed = 0.15, -- Camera follow speed (higher = snappier, 0.1-0.5)
     
     -- Field of View
     BaseFOV = 70,        -- FOV normal saat tidak fight

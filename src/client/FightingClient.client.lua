@@ -102,6 +102,7 @@ local isAttacking = false
 local comboStep = 1            -- light attack combo index
 local heavyComboStep = 1       -- heavy attack combo index
 local lastAttackTime = 0
+local lastHeavyAttackTime = 0  -- added to track heavy attack combos
 local heavyAttackCooldown = 0  -- tick() timestamp when heavy cooldown expires
 local dodgeCooldownEnd = 0     -- tick() timestamp when dodge cooldown expires
 
@@ -178,13 +179,16 @@ local function loadAnimations()
     
     -- Heavy attack combos (array, sama seperti light attack)
     animationTracks.HeavyAttack = {}
-    for i, animId in ipairs(AnimationConfig.HeavyAttack.Combo) do
-        animationTracks.HeavyAttack[i] = AnimationConfig.LoadAnimation(
-            Animator,
-            animId,
-            false,
-            Enum.AnimationPriority.Action
-        )
+    for i, animData in ipairs(AnimationConfig.HeavyAttack.Combo) do
+        local animId = (type(animData) == "table") and animData.id or animData
+        if animId then
+            animationTracks.HeavyAttack[i] = AnimationConfig.LoadAnimation(
+                Animator,
+                animId,
+                false,
+                Enum.AnimationPriority.Action
+            )
+        end
     end
 
     -- Heavy hit animations (array)
@@ -596,6 +600,13 @@ local function performHeavyAttack()
     local config = FightingConfig.Combat.HeavyAttack
     local currentTime = tick()
     
+    -- Check combo window: Jika lebih lama dari cooldown + jeda waktu, reset ke hit 1
+    -- (Menggunakan ComboWindow milik LightAttack sebagai fallback tolerance jika user telat mencet)
+    local comboWindow = FightingConfig.Combat.LightAttack.ComboWindow or 1.5
+    if currentTime - lastHeavyAttackTime > (config.Cooldown + comboWindow) then
+        heavyComboStep = 1
+    end
+    
     -- Check cooldown
     if currentTime < heavyAttackCooldown then
         print("   ❌ On cooldown")
@@ -612,6 +623,7 @@ local function performHeavyAttack()
     print("   ✅ All checks passed! Executing heavy attack...")
     
     isAttacking = true
+    lastHeavyAttackTime = currentTime
     heavyAttackCooldown = currentTime + config.Cooldown
     
     -- Pick heavy attack track from combo array
@@ -622,8 +634,17 @@ local function performHeavyAttack()
         stopAllCombatAnimations()
         heavyTrack:Play()
         
-        -- Charge time before dealing damage
-        task.delay(config.ChargeTime, function()
+        -- Ambil DamageTime dari konfigurasi HeavyAttack di AnimationConfig
+        local damageTime = config.ChargeTime
+        if AnimationConfig.HeavyAttack and AnimationConfig.HeavyAttack.Combo and AnimationConfig.HeavyAttack.Combo[heavyComboStep] then
+            local animData = AnimationConfig.HeavyAttack.Combo[heavyComboStep]
+            if type(animData) == "table" and animData.DamageTime then
+                damageTime = animData.DamageTime
+            end
+        end
+        
+        -- Charge / Delay time before dealing damage and pushforward
+        task.delay(damageTime, function()
             playSoundEffect("Whoosh")
             pushAttackerForward()
             hitDebugDummy("Heavy", heavyComboStep)
@@ -728,57 +749,27 @@ local function performDodge(direction)
     end
     
     -- ============================================
-    -- COLLISION-AWARE DODGE USING RAYCAST
+    -- COLLISION-AWARE DODGE USING BODYVELOCITY
     -- ============================================
-    local startPos = HRP.Position
-    local desiredDistance = config.Distance
-    local actualDistance = desiredDistance
+    -- Hitung speed yang dibutuhkan dari Distance dan Duration di config
+    local duration = config.Duration or 0.3
+    local distance = config.Distance or 15
+    local speed = distance / duration
     
-    -- Raycast parameters - ignore the player's own character
-    local raycastParams = RaycastParams.new()
-    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-    raycastParams.FilterDescendantsInstances = {Character}
-    raycastParams.IgnoreWater = true
-    
-    -- Cast ray from character center in dodge direction
-    -- Use character's approximate radius as buffer (about 2 studs)
-    local characterRadius = 2
-    local rayOrigin = startPos
-    local rayDirection = moveDir * (desiredDistance + characterRadius)
-    
-    local rayResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
-    
-    if rayResult then
-        -- Hit something! Calculate safe distance
-        local distanceToHit = (rayResult.Position - startPos).Magnitude
-        -- Subtract character radius to prevent clipping
-        actualDistance = math.max(0, distanceToHit - characterRadius - 0.5)
-        print("💨 [DODGE] Collision detected! Distance limited from", desiredDistance, "to", actualDistance)
-    end
-    
-    -- Calculate final target position
-    local targetPos = startPos + moveDir * actualDistance
-    
-    -- Only tween if there's actually distance to travel
-    if actualDistance > 0.5 then
-        local dodgeTween = TweenService:Create(
-            HRP,
-            TweenInfo.new(config.Duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            { CFrame = CFrame.new(targetPos) * CFrame.Angles(0, math.rad(HRP.Orientation.Y), 0) }
-        )
+    task.spawn(function()
+        local bv = Instance.new("BodyVelocity")
+        bv.Velocity = moveDir * speed
+        bv.MaxForce = Vector3.new(1e6, 0, 1e6) -- Horizontal drift only
+        bv.P = 1e6
+        bv.Parent = HRP
         
-        dodgeTween:Play()
-        dodgeTween.Completed:Connect(function()
-            isDodging = false
-        end)
-    else
-        -- No room to dodge, just reset immediately
-        print("💨 [DODGE] No room to dodge - blocked by collision")
+        task.wait(duration)
+        if bv and bv.Parent then bv:Destroy() end
         isDodging = false
-    end
+    end)
     
-    -- Also reset after duration just in case
-    task.delay(config.Duration + 0.1, function()
+    -- Fallback timeout safety
+    task.delay(duration + 0.1, function()
         isDodging = false
     end)
 
@@ -1773,6 +1764,43 @@ Player.CharacterAdded:Connect(function(newCharacter)
     end
     
     print("🔄 [FightingClient] Character respawned, references updated")
+end)
+
+-- ============================================
+-- INVISIBLE BLOCKER (MINIMUM DISTANCE ENFORCEMENT)
+-- ============================================
+RunService.Stepped:Connect(function()
+    if not Character or not HRP then return end
+    
+    local targetHRP = nil
+    
+    -- Tentukan target yang akan dilock/dicek
+    if isInMatch and targetPlayer and targetPlayer.Character then
+        targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    elseif DEBUG_MODE and debugDummy then
+        targetHRP = debugDummy:FindFirstChild("HumanoidRootPart")
+    end
+    
+    if targetHRP then
+        local minDist = FightingConfig.Combat.MinDistance or 2.5
+        
+        -- Cek jarak 2D pada bidang XZ saja (mengabaikan Y tinggi)
+        local p1 = Vector3.new(HRP.Position.X, 0, HRP.Position.Z)
+        local p2 = Vector3.new(targetHRP.Position.X, 0, targetHRP.Position.Z)
+        
+        local separation = p1 - p2
+        local dist = separation.Magnitude
+        
+        if dist > 0 and dist < minDist then
+            -- Cari seberapa banyak tubuh kita harus digeser mundur
+            local correction = minDist - dist
+            local pushDir = separation.Unit
+            
+            -- Terapkan CFrame ke posisi XZ baru tanpa mengubah Y atau rotasi karakter
+            local newPos = HRP.Position + (pushDir * correction)
+            HRP.CFrame = CFrame.new(newPos) * HRP.CFrame.Rotation
+        end
+    end
 end)
 
 -- ============================================
