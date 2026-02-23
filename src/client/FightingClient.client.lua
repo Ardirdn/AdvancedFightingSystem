@@ -892,7 +892,33 @@ local function startFightCamera()
         local upOffset = Vector3.new(0, offset.Y, 0)
         
         local cameraPos = HRP.Position + behindOffset + sideOffset + upOffset
-        
+
+        -- ── Camera Collision: Raycast dari kepala player ke posisi kamera ──────
+        -- Offset TIDAK berubah; hanya geser kamera ke depan tembok jika terhalang.
+        local rayOrigin = HRP.Position + Vector3.new(0, 1.5, 0)  -- setinggi kepala/leher
+        local rayToCamera = cameraPos - rayOrigin
+
+        if rayToCamera.Magnitude > 0.1 then
+            local camRayParams = RaycastParams.new()
+            camRayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+            -- Exclude karakter lokal, musuh, dan debug dummy agar tidak menghalangi kamera
+            local excludeList = { Character }
+            if currentOpponent and currentOpponent.Character then
+                table.insert(excludeList, currentOpponent.Character)
+            end
+            if debugDummy and debugDummy.Parent then
+                table.insert(excludeList, debugDummy)
+            end
+            camRayParams.FilterDescendantsInstances = excludeList
+
+            local camHit = workspace:Raycast(rayOrigin, rayToCamera, camRayParams)
+            if camHit then
+                -- Geser 0.3 stud ke arah player dari titik tabrakan → kamera tidak masuk tembok
+                cameraPos = camHit.Position - rayToCamera.Unit * 0.3
+            end
+        end
+
         -- Look at opponent
         local lookTarget
         if opponentPos then
@@ -900,10 +926,10 @@ local function startFightCamera()
         else
             lookTarget = HRP.Position + lookDir * 10 + Vector3.new(0, 2, 0)
         end
-        
-        -- Create target camera CFrame
+
+        -- Create target camera CFrame (dengan posisi yang sudah di-clamp ke collision)
         local targetCFrame = CFrame.new(cameraPos, lookTarget)
-        
+
         -- Frame-rate independent smooth camera
         local lerpSpeed = 1 - math.pow(1 - FightingConfig.Camera.CameraLerpSpeed, dt * 60)
         Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, lerpSpeed)

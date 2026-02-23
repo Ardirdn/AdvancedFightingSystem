@@ -214,11 +214,12 @@ FightingConfig.Camera = {
     -- ============================================
     HitEffects = {
         -- Blood screen (ColorCorrection effect)
-        BloodTintColor = Color3.fromRGB(255, 100, 100),  -- Red tint color
-        BloodContrast = 0.15,  -- Contrast saat hit (default 0.1)
+        -- Dikurangi 50%: RGB(255,100,100) → midpoint ke putih = RGB(255,178,178)
+        BloodTintColor = Color3.fromRGB(255, 178, 178),
+        BloodContrast = 0.08,  -- 0.15 × 50% = 0.075 ≈ 0.08
         
-        -- Blur effect
-        BlurAmount = 20,  -- Blur size saat hit
+        -- Blur effect — dikurangi 50%: 20 → 10
+        BlurAmount = 10,
         
         -- Default values (saat tidak ada effect)
         DefaultTintColor = Color3.fromRGB(255, 255, 255),
