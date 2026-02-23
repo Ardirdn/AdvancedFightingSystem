@@ -41,6 +41,11 @@ local LIGHT_HIT_DMG    = 10
 local HEAVY_HIT_DMG    = 20
 local SPAWN_DISTANCE   = 4     -- studs in front of player
 
+-- ── Create DespawnDebugDummy remote ───────────────────────────────────────────
+local DespawnDebugDummy = Instance.new("RemoteEvent")
+DespawnDebugDummy.Name   = "DespawnDebugDummy"
+DespawnDebugDummy.Parent = FightingRemotes
+
 -- ── Per-player state ──────────────────────────────────────────────────────────
 local dummyHP = {}             -- [player.Name] = current cosmetic HP
 
@@ -119,6 +124,12 @@ local function updateHP(dummy, playerName, newHP)
         }):Play()
     end
 end
+
+-- ── DespawnDebugDummy handler ─────────────────────────────────────────────────
+DespawnDebugDummy.OnServerEvent:Connect(function(player)
+    local oldDummy = workspace:FindFirstChild("DebugDummy_" .. player.Name)
+    if oldDummy then oldDummy:Destroy() end
+end)
 
 -- ── SpawnDebugDummy handler ───────────────────────────────────────────────────
 SpawnDebugDummy.OnServerEvent:Connect(function(player)

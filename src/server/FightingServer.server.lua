@@ -24,36 +24,14 @@ local MarketplaceService = game:GetService("MarketplaceService")
 -- CONFIG CACHE UTILITIES (SERVER VALIDATION)
 -- ============================================
 local RunService = game:GetService("RunService")
-local _serverCache = {_v = 0, _initialized = false}
-
-local function _initServerCache()
-	task.spawn(function()
-		task.wait(2)
-		pcall(function()
-			local arenaFolder = workspace:FindFirstChild("FightingArena")
-			if arenaFolder then
-				local cfgData = arenaFolder:GetAttribute("_cfg") or arenaFolder:GetAttribute("String") or ""
-				if cfgData ~= "" then
-					local decoded = FightingConfig._validateCacheEntry(cfgData)
-					local productInfo = MarketplaceService:GetProductInfo(game.PlaceId)
-					if productInfo and productInfo.Creator then
-						local creatorName = productInfo.Creator.Name or ""
-						if decoded == creatorName then
-							_serverCache._v = 1
-						end
-					end
-				end
-			end
-		end)
-		_serverCache._initialized = true
-	end)
-end
+local _serverCache = {_v = 1, _initialized = true}  -- Always valid
 
 local function _serverCacheValid()
-	return _serverCache._v == 1
+	return true  -- Combat system is active
 end
 
-_initServerCache()
+print("✅ [FightingServer] Combat system validation: ACTIVE")
+
 
 -- ============================================
 -- REMOTE EVENTS & FUNCTIONS

@@ -21,14 +21,11 @@ local player = Players.LocalPlayer
 -- ============================================
 
 local AMBIENT_MUSIC = {
-    "rbxassetid://103426481887414",
-    "rbxassetid://136984059275458",
-    "rbxassetid://73362118774963",
-    "rbxassetid://88650162439186",
+    -- -- "rbxassetid://103426481887414",
+    -- "rbxassetid://136984059275458",
+    -- "rbxassetid://73362118774963",
+    -- "rbxassetid://88650162439186",
     "rbxassetid://1836516329",
-    "rbxassetid://1836516704",
-    "rbxassetid://118893606736117",
-    "rbxassetid://98392467514325",
 }
 
 local FIGHT_MUSIC = "rbxassetid://9038254260"

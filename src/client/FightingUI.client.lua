@@ -87,7 +87,7 @@ _initRuntimeCache()
 -- ============================================
 -- Must match DEBUG_MODE in FightingClient.client.lua!
 -- When true: FightingHUD stays enabled without a match (for Studio testing).
-local DEBUG_MODE = true
+local DEBUG_MODE = false
 
 -- ============================================
 

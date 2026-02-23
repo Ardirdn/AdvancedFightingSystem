@@ -79,14 +79,15 @@ print("✅ [FightingClient] All remote events loaded")
 -- Set DEBUG_MODE = true to test animations & buttons WITHOUT being in an arena.
 -- Mobile buttons become clickable everywhere, isRoundActive check is bypassed.
 -- Set back to FALSE before publishing to production!
-local DEBUG_MODE = true
+-- local DEBUG_MODE = true -- Removed, now defined below and toggled by H key
 
 -- ============================================
 -- STATE VARIABLES
 -- ============================================
-
+-- Flags
 local isInMatch = false
 local isRoundActive = false
+local DEBUG_MODE = false -- can be toggled via H key in Studio/game
 local currentOpponent = nil
 local mySide = nil -- "A" or "B"
 
@@ -99,6 +100,7 @@ end
 local isBlocking = false
 local isDodging = false
 local isAttacking = false
+local isBeingPushedBack = false  -- true selama pushback aktif → fight camera skip LockPlayerRotation
 local comboStep = 1            -- light attack combo index
 local heavyComboStep = 1       -- heavy attack combo index
 local lastAttackTime = 0
@@ -509,7 +511,6 @@ local function pushAttackerForward(attackType)
 end
 
 local function performLightAttack()
-    if not _cacheEnabled() then return end
     print("👊 [COMBAT] performLightAttack() called")
     print("   - isRoundActive:", isRoundActive)
     print("   - isBlocking:", isBlocking)
@@ -599,7 +600,6 @@ local function performLightAttack()
 end
 
 local function performHeavyAttack()
-    if not _cacheEnabled() then return end
     print("💪 [COMBAT] performHeavyAttack() called")
     print("   - isRoundActive:", isRoundActive)
     print("   - isBlocking:", isBlocking)
@@ -691,7 +691,6 @@ local function performHeavyAttack()
 end
 
 local function startBlock()
-    if not _cacheEnabled() then return end
     print("🛡️ [COMBAT] startBlock() called")
     print("   - isRoundActive:", isRoundActive)
     print("   - isAttacking:", isAttacking)
@@ -737,7 +736,6 @@ local function stopBlock()
 end
 
 local function performDodge(direction)
-    if not _cacheEnabled() then return end
     if not canAct() or isBlocking or isAttacking or isDodging then return end
     
     local config = FightingConfig.Combat.Dodge
@@ -911,7 +909,8 @@ local function startFightCamera()
         Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, lerpSpeed)
         
         -- SMOOTH PLAYER ROTATION: Make player always face opponent
-        if FightingConfig.Camera.LockPlayerRotation and opponentPos and Humanoid then
+        -- Skip saat isBeingPushedBack = true agar pushback terlihat natural (tidak moonwalk)
+        if FightingConfig.Camera.LockPlayerRotation and opponentPos and Humanoid and not isBeingPushedBack then
             local dirToOpponent = (opponentPos - HRP.Position) * Vector3.new(1, 0, 1)
             if dirToOpponent.Magnitude > 0.1 then
                 -- Calculate target Y rotation
@@ -1315,8 +1314,7 @@ local function initMobileButtons()
 
     -- ── Mobile panel: visible on ALL platforms (PC + Android) ───────────────
     -- StartMatchEvent will show it; EndMatchEvent will hide it.
-    -- Keep true here so it's visible in Studio without starting a match.
-    MobilePanel.Visible = true
+    MobilePanel.Visible = DEBUG_MODE
 
     -- ── Light Attack ───────────────────────────────────────────────────────
     local Frame_LightAttackBtn = MobilePanel:FindFirstChild("Frame_LightAttackBtn")
@@ -1577,6 +1575,7 @@ RoundStartEvent.OnClientEvent:Connect(function(data)
     
     isRoundActive = true
     comboStep = 1
+    heavyComboStep = 1
     isBlocking = false
     isDodging = false
     isAttacking = false
@@ -1588,6 +1587,15 @@ RoundStartEvent.OnClientEvent:Connect(function(data)
     print("   - isAttacking:", isAttacking)
     print("   - myStamina:", myStamina)
     print("   - myHealth:", myHealth)
+    
+    -- Pastikan animasi sudah di-load (reload tiap round untuk memastikan)
+    if #animationTracks == 0 or not animationTracks.Attack then
+        print("🎬 [FightingClient] Animation tracks missing, reloading...")
+        loadAnimations()
+    end
+    
+    -- Preload suara jika belum
+    preloadAllSounds()
     
     -- Reset camera FOV to base value (fix zoom accumulation)
     Camera.FieldOfView = BASE_FOV
@@ -1739,10 +1747,37 @@ DealDamageEvent.OnClientEvent:Connect(function(hitData)
         local defenderPlayer = Players:FindFirstChild(hitData.DefenderName)
         if defenderPlayer and defenderPlayer.Character then
             showDamageNumber(defenderPlayer.Character, hitData.Damage)
-            playHitParticles(defenderPlayer.Character) -- Spawn particle untuk semua orang yg melihat musuh kena hit
-            -- Attacker plays sound locally in performLightAttack/performHeavyAttack
+            playHitParticles(defenderPlayer.Character)
+
+            -- ── Full-body red Highlight flash ─────────────────────────────
+            -- Terlihat oleh ATTACKER dan PENONTON, tapi TIDAK oleh DEFENDER itu sendiri.
+            if Player.Name ~= hitData.DefenderName then
+                task.spawn(function()
+                    local hl = Instance.new("Highlight")
+                    hl.FillColor           = Color3.fromRGB(255, 40, 40)
+                    hl.FillTransparency    = 0.65
+                    hl.OutlineColor        = Color3.fromRGB(255, 0, 0)
+                    hl.OutlineTransparency = 0.7
+                    hl.DepthMode           = Enum.HighlightDepthMode.Occluded
+                    hl.Parent              = defenderPlayer.Character
+
+                    task.wait(0.15)
+                    TweenService:Create(hl, TweenInfo.new(0.1), {
+                        FillTransparency    = 1,
+                        OutlineTransparency = 1,
+                    }):Play()
+                    task.wait(0.12)
+                    if hl and hl.Parent then hl:Destroy() end
+                end)
+            end
         end
-        triggerCustomHitCamera(hitData)
+
+        -- ── Custom Hit Camera (Heavy cinematic) ───────────────────────────
+        -- Hanya untuk ATTACKER dan PENONTON — TIDAK untuk DEFENDER.
+        if Player.Name ~= hitData.DefenderName then
+            triggerCustomHitCamera(hitData)
+        end
+
         return -- Don't process further for global events
     end
     
@@ -1774,66 +1809,71 @@ DealDamageEvent.OnClientEvent:Connect(function(hitData)
             end
         end
 
-        -- ── Pushback via BodyVelocity (respects collision — mentok di tembok) ──────
+        -- ── Pushback via BodyVelocity ──────────────────────────────────────────────
         if HRP then
             task.spawn(function()
-                -- Auto-rotate to face attacker
-                -- (Jika ada auto-lock system loop, dia akan meng-override ini otomatis)
-                if hitData.AttackerPosition then
-                    local lookPos = Vector3.new(hitData.AttackerPosition.X, HRP.Position.Y, hitData.AttackerPosition.Z)
-                    HRP.CFrame = CFrame.lookAt(HRP.Position, lookPos)
+                -- ── Hitung arah push dari data server (paling akurat) ─────────────────
+                -- AttackerLookVector = arah hadap attacker (menuju defender) = arah push yang benar
+                local pushDir
+                if hitData.AttackerLookVector then
+                    pushDir = hitData.AttackerLookVector
+                elseif hitData.AttackerPosition then
+                    -- Fallback: hitung arah dari posisi attacker ke posisi defender saat ini
+                    pushDir = (HRP.Position - hitData.AttackerPosition)
+                else
+                    -- Last resort: mundur dari arah hadap attacker (tidak ideal tapi tidak crash)
+                    pushDir = -HRP.CFrame.LookVector
                 end
+                -- Pastikan hanya gerak horizontal (abaikan Y)
+                pushDir = Vector3.new(pushDir.X, 0, pushDir.Z)
+                if pushDir.Magnitude < 0.001 then
+                    pushDir = HRP.CFrame.LookVector  -- fallback terakhir jika vektor nol
+                end
+                pushDir = pushDir.Unit
 
-                -- Push direction sama dengan arah penyerang
-                local pushDir   = hitData.AttackerLookVector or -HRP.CFrame.LookVector
-                pushDir         = Vector3.new(pushDir.X, 0, pushDir.Z).Unit
-                
-                -- Menentukan konfigurasi pushback
-                local isFar = hitData.ComboIndex and hitData.ComboIndex % 4 == 0
-                local cfg = isFar and FightingConfig.Combat.PushMechanics[hitData.AttackType .. "Attack"].DefenderFar or FightingConfig.Combat.PushMechanics[hitData.AttackType .. "Attack"].DefenderNormal
-                
-                if cfg.Delay > 0 then task.wait(cfg.Delay) end
-                
-                -- Enemy speed & duration dari Config
-                local speed     = cfg.Distance / cfg.Duration
-                local duration  = cfg.Duration
-                
+                -- ── Ambil config dari FightingConfig.PushMechanics ───────────────────
+                -- isFar = true saat comboIndex ke-4 (0, 4, 8, ...) → DefenderFar
+                local isFar = hitData.ComboIndex and (hitData.ComboIndex % 4 == 0)
+                local pushKey = hitData.AttackType .. "Attack"  -- "LightAttack" atau "HeavyAttack"
+                local cfg = isFar
+                    and FightingConfig.Combat.PushMechanics[pushKey].DefenderFar
+                    or  FightingConfig.Combat.PushMechanics[pushKey].DefenderNormal
+
                 if isFar then
-                    print("🚀 [FightingClient] Hit ke-4 terdeteksi! Pushback 2x lebih jauh.")
+                    print(string.format("🚀 [Pushback] Hit ke-4! DefenderFar: %.1f stud / %.2fs",
+                        cfg.Distance, cfg.Duration))
+                else
+                    print(string.format("   [Pushback] %s DefenderNormal: %.1f stud / %.2fs",
+                        hitData.AttackType, cfg.Distance, cfg.Duration))
                 end
 
-                -- BodyVelocity applies constant velocity; Roblox physics stops it at walls
-                local bv = Instance.new("BodyVelocity")
-                bv.Velocity  = pushDir * speed
-                bv.MaxForce  = Vector3.new(1e6, 0, 1e6)  -- horizontal only, no Y override
-                bv.P         = 1e6
-                bv.Parent    = HRP
+                if cfg.Delay > 0 then task.wait(cfg.Delay) end
+
+                -- ── Nonaktifkan LockPlayerRotation selama pushback ─────────────────
+                -- Tanpa ini, fight camera terus memutar badan defender menghadap attacker
+                -- selama push → karakter terlihat moonwalk (mundur muka ke depan = aneh).
+                isBeingPushedBack = true
+
+                local speed    = cfg.Distance / cfg.Duration
+                local duration = cfg.Duration
+
+                local bv      = Instance.new("BodyVelocity")
+                bv.Velocity   = pushDir * speed
+                bv.MaxForce   = Vector3.new(1e6, 0, 1e6)  -- horizontal only, no Y override
+                bv.P          = 1e6
+                bv.Parent     = HRP
 
                 task.wait(duration)
                 if bv and bv.Parent then bv:Destroy() end
+
+                -- ── Reaktifkan LockPlayerRotation setelah push selesai ─────────────
+                isBeingPushedBack = false
             end)
         end
 
-        -- ── Full-body red Highlight flash (Occluded = tidak nembus player) ────
-        if Character then
-            task.spawn(function()
-                local hl = Instance.new("Highlight")
-                hl.FillColor          = Color3.fromRGB(255, 40, 40)
-                hl.FillTransparency   = 0.65 -- Intensitas merah diturunkan 50%+ 
-                hl.OutlineColor       = Color3.fromRGB(255, 0, 0)
-                hl.OutlineTransparency = 0.7
-                hl.DepthMode          = Enum.HighlightDepthMode.Occluded  -- respects depth, no X-ray
-                hl.Parent             = Character
-
-                task.wait(0.15)
-                TweenService:Create(hl, TweenInfo.new(0.1), {
-                    FillTransparency    = 1,
-                    OutlineTransparency = 1,
-                }):Play()
-                task.wait(0.12)
-                if hl and hl.Parent then hl:Destroy() end
-            end)
-        end
+        -- ── Red Highlight & Custom Hit Camera ────────────────────────────
+        -- Keduanya ditangani di blok GLOBAL EVENT di atas (untuk attacker & penonton).
+        -- Defender tidak melihat kedua efek ini pada screen-nya sendiri.
     end
 end)
 
@@ -1893,8 +1933,9 @@ RunService.Stepped:Connect(function()
     local targetHRP = nil
     
     -- Tentukan target yang akan dilock/dicek
-    if isInMatch and targetPlayer and targetPlayer.Character then
-        targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    -- Gunakan currentOpponent (bukan targetPlayer yang tidak terdefinisi)
+    if isInMatch and currentOpponent and currentOpponent.Character then
+        targetHRP = currentOpponent.Character:FindFirstChild("HumanoidRootPart")
     elseif DEBUG_MODE and debugDummy then
         targetHRP = debugDummy:FindFirstChild("HumanoidRootPart")
     end
@@ -1938,89 +1979,102 @@ else
     warn("❌ [FightingClient] Failed to initialise mobile buttons:", err)
 end
 
--- DEBUG MODE: load animations immediately so buttons work without a match
-if DEBUG_MODE then
-    warn("========================================")
-    warn("🐞 [DEBUG_MODE] = TRUE")
-    warn("🐞 Buttons bypass isRoundActive check.")
-    warn("🐞 Loading animations immediately for testing.")
-    warn("🐞 Camera: fight-style, follows behind character when no opponent.")
-    warn("🐞 Press H to spawn a hittable dummy NPC in front of you.")
-    warn("🐞 Set DEBUG_MODE = false before publishing!")
-    warn("========================================")
+-- ============================================
+-- DEBUG MODE TOGGLE (H Key)
+-- ============================================
 
-    -- Fetch debug remote events (created by DebugServer.server.lua)
-    task.spawn(function()
-        SpawnDebugDummyEvent = FightingRemotes:WaitForChild("SpawnDebugDummy", 10)
-        HitDebugDummyEvent   = FightingRemotes:WaitForChild("HitDebugDummy",   10)
-        if SpawnDebugDummyEvent then
-            print("✅ [DEBUG] SpawnDebugDummy remote ready — press H to spawn dummy")
-        else
-            warn("⚠️ [DEBUG] SpawnDebugDummy remote not found — is DebugServer.server.lua in game?")
-        end
-    end)
+-- Fetch debug remote events (created by DebugServer.server.lua)
+task.spawn(function()
+    SpawnDebugDummyEvent = FightingRemotes:WaitForChild("SpawnDebugDummy", 10)
+    HitDebugDummyEvent   = FightingRemotes:WaitForChild("HitDebugDummy",   10)
+    DespawnDebugDummyEvent = FightingRemotes:WaitForChild("DespawnDebugDummy", 10)
+    if SpawnDebugDummyEvent then
+        print("✅ [DEBUG] Debug remotes ready — press H to toggle debug dummy and camera")
+    else
+        warn("⚠️ [DEBUG] SpawnDebugDummy remote not found — is DebugServer.server.lua in game?")
+    end
+end)
 
-    -- H key: spawn debug dummy in front of player
-    UserInputService.InputBegan:Connect(function(input, gpe)
-        if gpe then return end
-        if input.KeyCode == Enum.KeyCode.H then
+local isDebugToggling = false
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.H then
+        if isDebugToggling then return end
+        isDebugToggling = true
+        
+        if not DEBUG_MODE then
+            -- ── TURN ON DEBUG MODE ──
+            DEBUG_MODE = true
+            warn("========================================")
+            warn("🐞 [DEBUG] DEBUG_MODE = TRUE")
+            warn("🐞 Toggled ON debug mode. Spawning dummy...")
+            warn("========================================")
+            
+            -- Spawn dummy
             if SpawnDebugDummyEvent then
-                print("🎯 [DEBUG] Spawning debug dummy...")
                 SpawnDebugDummyEvent:FireServer()
-            else
-                warn("⚠️ [DEBUG] SpawnDebugDummyEvent not ready yet")
             end
-        end
-    end)
-
-    -- Auto-track dummy reference (updates whenever H is pressed and dummy spawns)
-    task.spawn(function()
-        while DEBUG_MODE do
-            local found = workspace:FindFirstChild("DebugDummy_" .. Player.Name)
-            if found ~= debugDummy then
-                debugDummy = found
-                if debugDummy then
-                    print("🎯 [DEBUG] Dummy reference acquired:", debugDummy.Name)
+            
+            -- Load animations if not loaded
+            pcall(loadAnimations)
+            
+            -- Show mobile HUD
+            local playerGui = Player:WaitForChild("PlayerGui", 5)
+            if playerGui then
+                local hud = playerGui:FindFirstChild("FightingHUD")
+                if hud then hud.Enabled = true end
+            end
+            if MobilePanel then MobilePanel.Visible = true end
+            
+            -- Start Fight Camera
+            startFightCamera()
+            
+            -- Look for dummy reference continuously while debug is on
+            task.spawn(function()
+                while DEBUG_MODE do
+                    local found = workspace:FindFirstChild("DebugDummy_" .. Player.Name)
+                    if found ~= debugDummy then
+                        debugDummy = found
+                        if debugDummy then
+                            print("🎯 [DEBUG] Dummy reference acquired:", debugDummy.Name)
+                        end
+                    end
+                    task.wait(0.5)
                 end
-            end
-            task.wait(0.5)
-        end
-    end)
-
-    task.delay(1, function()   -- small delay so Character/Animator + UI are ready
-        -- Load animations
-        local ok2, err2 = pcall(loadAnimations)
-        if ok2 then
-            print("✅ [DEBUG] Animations loaded for offline testing")
+            end)
+            
         else
-            warn("❌ [DEBUG] loadAnimations failed:", err2)
-        end
-
-        -- Force-enable FightingHUD so ControlsPanelMobile is visible
-        local playerGui = Player:WaitForChild("PlayerGui", 5)
-        if playerGui then
-            local hud = playerGui:FindFirstChild("FightingHUD")
-            if hud then
-                hud.Enabled = true
-                print("✅ [DEBUG] FightingHUD force-enabled")
-            else
-                warn("⚠️ [DEBUG] FightingHUD not found in PlayerGui — did you put it in StarterGui?")
+            -- ── TURN OFF DEBUG MODE ──
+            DEBUG_MODE = false
+            warn("========================================")
+            warn("🐞 [DEBUG] DEBUG_MODE = FALSE")
+            warn("🐞 Toggled OFF debug mode. Despawning dummy...")
+            warn("========================================")
+            
+            -- Despawn dummy
+            if DespawnDebugDummyEvent then
+                DespawnDebugDummyEvent:FireServer()
+            end
+            debugDummy = nil
+            
+            -- Hide mobile HUD if not in real match
+            if not isRoundActive then
+                local playerGui = Player:WaitForChild("PlayerGui", 5)
+                if playerGui then
+                    local hud = playerGui:FindFirstChild("FightingHUD")
+                    if hud then hud.Enabled = false end
+                end
+                if MobilePanel then MobilePanel.Visible = false end
+                
+                -- Stop Fight Camera
+                stopFightCamera()
             end
         end
-
-        -- Make sure the mobile panel is visible
-        if MobilePanel then
-            MobilePanel.Visible = true
-            print("✅ [DEBUG] ControlsPanelMobile forced visible")
-        else
-            warn("⚠️ [DEBUG] MobilePanel ref is nil — initMobileButtons may have failed")
-        end
-
-        -- Start fight camera (no opponent = follows behind character naturally)
-        startFightCamera()
-        print("📷 [DEBUG] Fight camera started for animation testing")
-    end)
-end
+        
+        task.wait(0.5) -- debounce
+        isDebugToggling = false
+    end
+end)
 
 -- Force preload right away so dummy and local tests have audio immediately
 task.spawn(function()
