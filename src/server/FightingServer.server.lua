@@ -89,6 +89,10 @@ local CameraShakeEvent = Instance.new("RemoteEvent")
 CameraShakeEvent.Name = "CameraShake"
 CameraShakeEvent.Parent = FightingRemotes
 
+local RagdollEvent = Instance.new("RemoteEvent")
+RagdollEvent.Name = "Ragdoll"
+RagdollEvent.Parent = FightingRemotes
+
 -- Functions
 local GetLeaderboardFunc = Instance.new("RemoteFunction")
 GetLeaderboardFunc.Name = "GetLeaderboard"
@@ -329,6 +333,158 @@ Players.PlayerAdded:Connect(function(player)
 end)
 
 -- ============================================
+-- RAGDOLL SYSTEM
+-- ============================================
+
+local ragdolledPlayers = {} -- [Player] = { joints = {}, collisions = {} }
+
+local function enableRagdoll(targetPlayer)
+    if not targetPlayer or not targetPlayer.Character then return end
+    if ragdolledPlayers[targetPlayer] then return end -- already ragdolled
+    
+    local character = targetPlayer.Character
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    
+    local savedData = { joints = {}, collisions = {} }
+    
+    -- 1. Stop all playing animation tracks
+    pcall(function()
+        local animator = humanoid:FindFirstChildOfClass("Animator")
+        if animator then
+            for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                track:Stop(0)
+            end
+        end
+    end)
+    
+    -- 2. Freeze movement
+    humanoid.PlatformStand = true
+    humanoid.AutoRotate = false
+    humanoid.WalkSpeed = 0
+    humanoid.JumpPower = 0
+    humanoid.JumpHeight = 0
+    
+    -- 3. Convert Motor6D joints to BallSocketConstraints (ragdoll)
+    for _, descendant in ipairs(character:GetDescendants()) do
+        if descendant:IsA("Motor6D") and descendant.Name ~= "RootJoint" then
+            -- Save joint info
+            table.insert(savedData.joints, {
+                Motor = descendant,
+                Part0 = descendant.Part0,
+                Part1 = descendant.Part1,
+                C0 = descendant.C0,
+                C1 = descendant.C1,
+            })
+            
+            -- Create attachment pair
+            local att0 = Instance.new("Attachment")
+            att0.Name = "RagdollAtt0_" .. descendant.Name
+            att0.CFrame = descendant.C0
+            att0.Parent = descendant.Part0
+            
+            local att1 = Instance.new("Attachment")
+            att1.Name = "RagdollAtt1_" .. descendant.Name
+            att1.CFrame = descendant.C1
+            att1.Parent = descendant.Part1
+            
+            -- Create BallSocketConstraint
+            local bsc = Instance.new("BallSocketConstraint")
+            bsc.Name = "RagdollBSC_" .. descendant.Name
+            bsc.Attachment0 = att0
+            bsc.Attachment1 = att1
+            bsc.LimitsEnabled = true
+            bsc.TwistLimitsEnabled = true
+            bsc.UpperAngle = 50
+            bsc.TwistLowerAngle = -30
+            bsc.TwistUpperAngle = 30
+            bsc.Parent = descendant.Part0
+            
+            -- Disable the Motor6D (don't destroy, we restore later)
+            descendant.Enabled = false
+        end
+    end
+    
+    -- 4. Enable CanCollide on all body parts (prevent floor clipping)
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            savedData.collisions[part] = part.CanCollide
+            part.CanCollide = true
+        end
+    end
+    
+    -- 5. Unanchor the HumanoidRootPart so physics take over
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        hrp.CanCollide = false -- HRP should not collide during ragdoll
+    end
+    
+    ragdolledPlayers[targetPlayer] = savedData
+    
+    -- Notify clients
+    RagdollEvent:FireAllClients(targetPlayer, true)
+    print("🦴 [RAGDOLL] Enabled ragdoll for", targetPlayer.Name)
+end
+
+local function disableRagdoll(targetPlayer)
+    if not targetPlayer then return end
+    local savedData = ragdolledPlayers[targetPlayer]
+    if not savedData then return end
+    
+    local character = targetPlayer.Character
+    if not character then
+        ragdolledPlayers[targetPlayer] = nil
+        return
+    end
+    
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    
+    -- 1. Remove all ragdoll constraints and attachments
+    for _, desc in ipairs(character:GetDescendants()) do
+        if desc:IsA("BallSocketConstraint") and string.find(desc.Name, "RagdollBSC_") then
+            desc:Destroy()
+        elseif desc:IsA("Attachment") and (string.find(desc.Name, "RagdollAtt0_") or string.find(desc.Name, "RagdollAtt1_")) then
+            desc:Destroy()
+        end
+    end
+    
+    -- 2. Re-enable Motor6D joints
+    for _, jointData in ipairs(savedData.joints) do
+        if jointData.Motor and jointData.Motor.Parent then
+            jointData.Motor.Enabled = true
+        end
+    end
+    
+    -- 3. Restore CanCollide states
+    for part, wasCollidable in pairs(savedData.collisions) do
+        if part and part.Parent then
+            part.CanCollide = wasCollidable
+        end
+    end
+    
+    -- 4. Restore HRP collisions
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        hrp.CanCollide = true
+    end
+    
+    -- 5. Restore humanoid movement
+    if humanoid then
+        humanoid.PlatformStand = false
+        humanoid.AutoRotate = true
+        humanoid.WalkSpeed = 16
+        humanoid.JumpPower = 50
+        humanoid.JumpHeight = 7.2
+    end
+    
+    ragdolledPlayers[targetPlayer] = nil
+    
+    -- Notify clients
+    RagdollEvent:FireAllClients(targetPlayer, false)
+    print("🦴 [RAGDOLL] Disabled ragdoll for", targetPlayer.Name)
+end
+
+-- ============================================
 -- MATCH LOGIC
 -- ============================================
 
@@ -519,16 +675,11 @@ local function endRound(arenaState, winner)
     
     print("🏆 [FightingServer] Round", arenaState.CurrentRound, "ended -", (winner and winner.Name .. " wins" or "Draw"))
     
-    -- ── Break-apart death effect: Kill loser's Humanoid ──────────────────────
-    -- Roblox akan memecah sendi karakter (BreakJointsOnDeath=true) sehingga
-    -- semua part terlepas dan jatuh secara fisika — seperti mati di Roblox asli.
-    -- Auto-respawn terjadi setelah Players.RespawnTime (di-set 2 detik di startup).
-    if loser and loser.Character then
-        local loserHum = loser.Character:FindFirstChildOfClass("Humanoid")
-        if loserHum and loserHum.Health > 0 then
-            loserHum.Health = 0
-            print("💀 [FightingServer]", loser.Name, "KO! Break-apart triggered.")
-        end
+    -- ── Ragdoll KO: jadikan loser ragdoll (jatuh lemas, tidak bisa gerak) ─────
+    -- Tidak membunuh karakter, hanya menonaktifkan joints dan freeze gerakan.
+    if loser then
+        enableRagdoll(loser)
+        print("💀 [FightingServer]", loser.Name, "KO! Ragdoll triggered.")
     end
     
     -- Check for match end
@@ -548,22 +699,13 @@ local function endRound(arenaState, winner)
         end
         task.delay(2.5, function() endMatch(arenaState, matchWinner) end)
     else
-        -- ── Round berikutnya: tunggu loser respawn lalu mulai ─────────────────
-        -- Delay 3.5 detik: loser die (0s) → auto-respawn (2s) → buffer (1.5s) → startRound (3.5s)
-        task.delay(3.5, function()
+        -- ── Round berikutnya: tunggu ragdoll selesai lalu unragdoll + startRound ──
+        task.delay(3.0, function()
             if not arenaState.IsActive then return end
             
-            -- Hapus ForceField (invincibility) dari kedua player setelah respawn
-            for _, p in ipairs({ playerA, playerB }) do
-                if p and p.Character then
-                    for _, child in ipairs(p.Character:GetChildren()) do
-                        if child:IsA("ForceField") then
-                            child:Destroy()
-                            print("🛡️ [FightingServer] ForceField removed from", p.Name)
-                        end
-                    end
-                end
-            end
+            -- Unragdoll kedua player sebelum mulai round baru
+            disableRagdoll(playerA)
+            disableRagdoll(playerB)
             
             startRound(arenaState)
         end)
@@ -600,19 +742,18 @@ function endMatch(arenaState, winner)
     
     print("🎉 [FightingServer] Match ended in", arena.Name, "-", (winner and winner.Name .. " wins!" or "Draw!"))
     
-    -- Teleport players out - skip jika karakter masih dalam state mati (ragdoll)
+    -- Unragdoll kedua player sebelum teleport keluar
+    disableRagdoll(playerA)
+    disableRagdoll(playerB)
+    
+    -- Teleport players out
     local outPos = arena:FindFirstChild("OutPosition")
     if outPos then
         task.spawn(function()
             task.wait(0.5)  -- brief buffer sebelum teleport
             for _, p in ipairs({ playerA, playerB }) do
                 if p and p.Character then
-                    local hum = p.Character:FindFirstChildOfClass("Humanoid")
-                    if hum and hum.Health > 0 then
-                        teleportPlayerToPosition(p, outPos)
-                    end
-                    -- Karakter mati (ragdoll) akan auto-respawn di spawn, bukan OutPosition.
-                    -- Mereka tidak dalam match lagi jadi itu tidak masalah.
+                    teleportPlayerToPosition(p, outPos)
                 end
             end
         end)

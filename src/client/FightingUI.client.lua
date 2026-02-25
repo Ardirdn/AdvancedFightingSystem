@@ -262,10 +262,26 @@ local function initFightingUI()
 end
 
 -- ============================================
--- BIG TEXT ANNOUNCEMENT FUNCTIONS
+-- HELPER: Apply TextScaled + UITextSizeConstraint to any text element
+-- ============================================
+local function applyTextScaling(textObj, minSize, maxSize)
+    if not textObj then return end
+    textObj.TextScaled = true
+    textObj.TextWrapped = true
+    -- Remove existing constraint if any
+    local existing = textObj:FindFirstChildOfClass("UITextSizeConstraint")
+    if existing then existing:Destroy() end
+    local tsc = Instance.new("UITextSizeConstraint")
+    tsc.MinTextSize = minSize or 8
+    tsc.MaxTextSize = maxSize or 120
+    tsc.Parent = textObj
+end
+
+-- ============================================
+-- BIG TEXT ANNOUNCEMENT FUNCTIONS (Adaptive)
 -- ============================================
 
-local function showBigText(text, color, duration, size)
+local function showBigText(text, color, duration, _size)
     if not FightingScreenGui then return end
 
     local CenterAnnouncementText = FightingScreenGui:FindFirstChild("CenterAnnouncementText")
@@ -273,22 +289,26 @@ local function showBigText(text, color, duration, size)
 
     CenterAnnouncementText.Text = text
     CenterAnnouncementText.TextColor3 = color or Color3.fromRGB(255, 255, 255)
-    CenterAnnouncementText.TextSize = 0
     CenterAnnouncementText.TextTransparency = 0
     CenterAnnouncementText.TextStrokeTransparency = 0
     CenterAnnouncementText.Visible = true
 
-    local targetSize = size or 120
+    -- Make it adaptive: TextScaled with constraint
+    CenterAnnouncementText.TextScaled = true
+    CenterAnnouncementText.TextWrapped = false
+    applyTextScaling(CenterAnnouncementText, 20, 150)
 
+    -- Animate in: scale the frame size from small to full
+    CenterAnnouncementText.Size = UDim2.new(0, 0, 0, 0)
     TweenService:Create(CenterAnnouncementText, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-        TextSize = targetSize
+        Size = UDim2.new(0.8, 0, 0.2, 0)
     }):Play()
 
     task.delay(duration or 1, function()
         TweenService:Create(CenterAnnouncementText, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {
             TextTransparency = 1,
             TextStrokeTransparency = 1,
-            TextSize = targetSize * 1.2
+            Size = UDim2.new(1, 0, 0.25, 0)
         }):Play()
 
         task.delay(0.3, function()
@@ -298,16 +318,16 @@ local function showBigText(text, color, duration, size)
 end
 
 local function showRoundAnnouncement(roundNumber)
-    showBigText("ROUND " .. roundNumber, Color3.fromRGB(255, 220, 100), 1.2, 100)
+    showBigText("ROUND " .. roundNumber, Color3.fromRGB(255, 220, 100), 1.2)
 
-    task.delay(1.5, function() showBigText("3", Color3.fromRGB(255, 255, 255), 0.8, 150) end)
-    task.delay(2.5, function() showBigText("2", Color3.fromRGB(255, 255, 255), 0.8, 150) end)
-    task.delay(3.5, function() showBigText("1", Color3.fromRGB(255, 255, 255), 0.8, 150) end)
-    task.delay(4.5, function() showBigText("FIGHT!", Color3.fromRGB(255, 100, 100), 1.0, 130) end)
+    task.delay(1.5, function() showBigText("3", Color3.fromRGB(255, 255, 255), 0.8) end)
+    task.delay(2.5, function() showBigText("2", Color3.fromRGB(255, 255, 255), 0.8) end)
+    task.delay(3.5, function() showBigText("1", Color3.fromRGB(255, 255, 255), 0.8) end)
+    task.delay(4.5, function() showBigText("FIGHT!", Color3.fromRGB(255, 100, 100), 1.0) end)
 end
 
 local function showRoundEnded(roundNumber, _winnerName)
-    showBigText("ROUND " .. roundNumber .. " ENDED", Color3.fromRGB(200, 200, 200), 2.0, 80)
+    showBigText("ROUND " .. roundNumber .. " ENDED", Color3.fromRGB(200, 200, 200), 2.0)
 end
 
 -- ============================================
@@ -363,6 +383,10 @@ local function showResultScreen(isWinner, myScore, opponentScore, stats)
     local ResultContainer = ResultScreenFrame:FindFirstChild("ResultContainer")
     if not ResultContainer then return end
 
+    -- ── Make ResultContainer scale-based ──
+    ResultContainer.Size = UDim2.new(0.5, 0, 0.55, 0) -- 50% width, 55% height of screen
+    ResultContainer.AnchorPoint = Vector2.new(0.5, 0.5)
+
     local ResultTitleLabel = ResultContainer:FindFirstChild("ResultTitleLabel")
     if ResultTitleLabel then
         if isWinner then
@@ -372,32 +396,41 @@ local function showResultScreen(isWinner, myScore, opponentScore, stats)
             ResultTitleLabel.Text = "YOU LOSE"
             ResultTitleLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
         end
+        applyTextScaling(ResultTitleLabel, 14, 60)
     end
 
     local ResultScoreLabel = ResultContainer:FindFirstChild("ResultScoreLabel")
     if ResultScoreLabel then
         ResultScoreLabel.Text = "Final Score: " .. myScore .. " - " .. opponentScore
+        applyTextScaling(ResultScoreLabel, 10, 30)
     end
 
     local ResultStatsPanel = ResultContainer:FindFirstChild("ResultStatsPanel")
     if ResultStatsPanel and stats then
-        local hitsRow = ResultStatsPanel:FindFirstChild("StatRow_Total_Hits")
-        if hitsRow then hitsRow.Text = "Total Hits: " .. (stats.Hits or 0) end
+        local statRows = {
+            { name = "StatRow_Total_Hits",       text = "Total Hits: " .. (stats.Hits or 0) },
+            { name = "StatRow_Successful_Blocks", text = "Successful Blocks: " .. (stats.Blocks or 0) },
+            { name = "StatRow_Total_Damage",      text = "Total Damage: " .. (stats.DamageDealt or 0) },
+            { name = "StatRow_Rounds_Won",        text = "Rounds Won: " .. myScore },
+        }
+        for _, row in ipairs(statRows) do
+            local label = ResultStatsPanel:FindFirstChild(row.name)
+            if label then
+                label.Text = row.text
+                applyTextScaling(label, 8, 22)
+            end
+        end
+    end
 
-        local blocksRow = ResultStatsPanel:FindFirstChild("StatRow_Successful_Blocks")
-        if blocksRow then blocksRow.Text = "Successful Blocks: " .. (stats.Blocks or 0) end
-
-        local damageRow = ResultStatsPanel:FindFirstChild("StatRow_Total_Damage")
-        if damageRow then damageRow.Text = "Total Damage: " .. (stats.DamageDealt or 0) end
-
-        local roundsRow = ResultStatsPanel:FindFirstChild("StatRow_Rounds_Won")
-        if roundsRow then roundsRow.Text = "Rounds Won: " .. myScore end
+    -- Scale ContinueButton text
+    local ContinueButton = ResultContainer:FindFirstChild("ContinueButton")
+    if ContinueButton then
+        applyTextScaling(ContinueButton, 10, 24)
     end
 
     ResultScreenFrame.Visible = true
 
-    -- Animate in
-    ResultContainer.AnchorPoint = Vector2.new(0.5, 0.5)
+    -- Animate in (scale-based positioning)
     ResultContainer.Position = UDim2.new(0.5, 0, -0.3, 0)
     TweenService:Create(ResultContainer, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
         Position = UDim2.new(0.5, 0, 0.5, 0)

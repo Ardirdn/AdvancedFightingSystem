@@ -1673,9 +1673,46 @@ RoundEndEvent.OnClientEvent:Connect(function(data)
     stopBlock()
     stopAllCombatAnimations()
     
-    -- Jika kalah: server handle break-apart + respawn otomatis.
-    -- Client tidak perlu play death animation atau lock movement.
-    -- CharacterAdded pada client akan reload animations saat respawn.
+    -- Server akan handle ragdoll pada loser.
+    -- Client hanya perlu reset state-nya. Karakter TIDAK mati/respawn.
+end)
+
+-- ============================================
+-- RAGDOLL CLIENT SUPPORT
+-- ============================================
+-- Roblox tends to reset CanCollide on the client, so we maintain it
+-- via a heartbeat loop while a player is ragdolled nearby.
+
+local ragdolledCharacters = {}
+
+local RagdollEvent = FightingRemotes:WaitForChild("Ragdoll", 10)
+if RagdollEvent then
+    RagdollEvent.OnClientEvent:Connect(function(targetPlayer, isRagdolled)
+        if not targetPlayer or not targetPlayer.Character then return end
+        
+        if isRagdolled then
+            ragdolledCharacters[targetPlayer] = targetPlayer.Character
+            print("🦴 [FightingClient] Ragdoll ON for", targetPlayer.Name)
+        else
+            ragdolledCharacters[targetPlayer] = nil
+            print("🦴 [FightingClient] Ragdoll OFF for", targetPlayer.Name)
+        end
+    end)
+end
+
+-- Force CanCollide every frame for ragdolled characters (prevents floor clipping)
+RunService.Heartbeat:Connect(function()
+    for targetPlayer, character in pairs(ragdolledCharacters) do
+        if not character or not character.Parent then
+            ragdolledCharacters[targetPlayer] = nil
+            continue
+        end
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                part.CanCollide = true
+            end
+        end
+    end
 end)
 
 UpdateStatsEvent.OnClientEvent:Connect(function(data)
