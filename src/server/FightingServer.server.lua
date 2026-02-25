@@ -32,6 +32,9 @@ end
 
 print("✅ [FightingServer] Combat system validation: ACTIVE")
 
+-- Respawn cepat untuk fighting game: loser respawn dalam 2 detik setelah break-apart
+Players.RespawnTime = 2
+print("✅ [FightingServer] RespawnTime set to 2 seconds")
 
 -- ============================================
 -- REMOTE EVENTS & FUNCTIONS
@@ -481,6 +484,12 @@ local function endRound(arenaState, winner)
     local playerA = arenaState.PlayerA
     local playerB = arenaState.PlayerB
     
+    -- Tentukan loser (kebalikan dari winner)
+    local loser = nil
+    if winner == playerA then     loser = playerB
+    elseif winner == playerB then loser = playerA
+    end
+    
     -- Determine winner
     local winnerSide = "draw"
     if winner == playerA then
@@ -510,29 +519,53 @@ local function endRound(arenaState, winner)
     
     print("🏆 [FightingServer] Round", arenaState.CurrentRound, "ended -", (winner and winner.Name .. " wins" or "Draw"))
     
+    -- ── Break-apart death effect: Kill loser's Humanoid ──────────────────────
+    -- Roblox akan memecah sendi karakter (BreakJointsOnDeath=true) sehingga
+    -- semua part terlepas dan jatuh secara fisika — seperti mati di Roblox asli.
+    -- Auto-respawn terjadi setelah Players.RespawnTime (di-set 2 detik di startup).
+    if loser and loser.Character then
+        local loserHum = loser.Character:FindFirstChildOfClass("Humanoid")
+        if loserHum and loserHum.Health > 0 then
+            loserHum.Health = 0
+            print("💀 [FightingServer]", loser.Name, "KO! Break-apart triggered.")
+        end
+    end
+    
     -- Check for match end
     local requiredWins = math.ceil(arenaState.TotalRounds / 2)
     
     if arenaState.PlayerAWins >= requiredWins then
-        endMatch(arenaState, playerA)
+        task.delay(2.5, function() endMatch(arenaState, playerA) end)
     elseif arenaState.PlayerBWins >= requiredWins then
-        endMatch(arenaState, playerB)
+        task.delay(2.5, function() endMatch(arenaState, playerB) end)
     elseif arenaState.CurrentRound >= arenaState.TotalRounds then
         -- All rounds completed, whoever has more wins
+        local matchWinner = nil
         if arenaState.PlayerAWins > arenaState.PlayerBWins then
-            endMatch(arenaState, playerA)
+            matchWinner = playerA
         elseif arenaState.PlayerBWins > arenaState.PlayerAWins then
-            endMatch(arenaState, playerB)
-        else
-            -- Tie - could do sudden death or draw
-            endMatch(arenaState, nil)
+            matchWinner = playerB
         end
+        task.delay(2.5, function() endMatch(arenaState, matchWinner) end)
     else
-        -- Next round after delay
-        task.delay(3, function()
-            if arenaState.IsActive then
-                startRound(arenaState)
+        -- ── Round berikutnya: tunggu loser respawn lalu mulai ─────────────────
+        -- Delay 3.5 detik: loser die (0s) → auto-respawn (2s) → buffer (1.5s) → startRound (3.5s)
+        task.delay(3.5, function()
+            if not arenaState.IsActive then return end
+            
+            -- Hapus ForceField (invincibility) dari kedua player setelah respawn
+            for _, p in ipairs({ playerA, playerB }) do
+                if p and p.Character then
+                    for _, child in ipairs(p.Character:GetChildren()) do
+                        if child:IsA("ForceField") then
+                            child:Destroy()
+                            print("🛡️ [FightingServer] ForceField removed from", p.Name)
+                        end
+                    end
+                end
             end
+            
+            startRound(arenaState)
         end)
     end
 end
@@ -567,16 +600,22 @@ function endMatch(arenaState, winner)
     
     print("🎉 [FightingServer] Match ended in", arena.Name, "-", (winner and winner.Name .. " wins!" or "Draw!"))
     
-    -- Teleport players out immediately (no delay)
+    -- Teleport players out - skip jika karakter masih dalam state mati (ragdoll)
     local outPos = arena:FindFirstChild("OutPosition")
-    
     if outPos then
-        if playerA and playerA.Character then
-            teleportPlayerToPosition(playerA, outPos)
-        end
-        if playerB and playerB.Character then
-            teleportPlayerToPosition(playerB, outPos)
-        end
+        task.spawn(function()
+            task.wait(0.5)  -- brief buffer sebelum teleport
+            for _, p in ipairs({ playerA, playerB }) do
+                if p and p.Character then
+                    local hum = p.Character:FindFirstChildOfClass("Humanoid")
+                    if hum and hum.Health > 0 then
+                        teleportPlayerToPosition(p, outPos)
+                    end
+                    -- Karakter mati (ragdoll) akan auto-respawn di spawn, bukan OutPosition.
+                    -- Mereka tidak dalam match lagi jadi itu tidak masalah.
+                end
+            end
+        end)
     end
     
     -- Set cooldowns

@@ -1537,6 +1537,24 @@ StartMatchEvent.OnClientEvent:Connect(function(data)
     
     -- Load animations
     loadAnimations()
+
+    -- Lock Topbar Icons (Music & Dance) & Stop Dance
+    pcall(function()
+        if _G.DanceIcon then
+            _G.DanceIcon:deselect()
+            _G.DanceIcon:lock()
+        end
+        if _G.MusicIcon then
+            _G.MusicIcon:deselect()
+            _G.MusicIcon:lock()
+        end
+        
+        -- Force stop current dance
+        local dComm = ReplicatedStorage:FindFirstChild("DanceComm")
+        if dComm and dComm:FindFirstChild("StopDance") then
+            dComm.StopDance:FireServer()
+        end
+    end)
 end)
 
 EndMatchEvent.OnClientEvent:Connect(function(data)
@@ -1545,12 +1563,6 @@ EndMatchEvent.OnClientEvent:Connect(function(data)
     isInMatch = false
     isRoundActive = false
     currentOpponent = nil
-    
-    -- Stop death animation if playing
-    if _G.currentDeathAnimation then
-        _G.currentDeathAnimation:Stop()
-        _G.currentDeathAnimation = nil
-    end
     
     -- Play win/lose sound
     local didWin = (data.Winner == Player.Name)
@@ -1578,18 +1590,23 @@ EndMatchEvent.OnClientEvent:Connect(function(data)
     
     -- Stop all animations
     stopAllCombatAnimations()
+
+    -- Unlock Topbar Icons (Music & Dance) & Show Billboards
+    pcall(function()
+        if _G.DanceIcon then _G.DanceIcon:unlock() end
+        if _G.MusicIcon then _G.MusicIcon:unlock() end
+        
+        -- Show title
+        if Character and Character:FindFirstChild("Head") and Character.Head:FindFirstChild("TitleBillboard") then
+            Character.Head.TitleBillboard.Enabled = true
+        end
+    end)
 end)
 
 RoundStartEvent.OnClientEvent:Connect(function(data)
     print("========================================")
     print("🔔 [FightingClient] Round", data.RoundNumber, "starting!")
     print("========================================")
-    
-    -- Stop death animation if playing
-    if _G.currentDeathAnimation then
-        _G.currentDeathAnimation:Stop()
-        _G.currentDeathAnimation = nil
-    end
     
     -- Restore movement and rotation
     if Humanoid then
@@ -1629,6 +1646,17 @@ RoundStartEvent.OnClientEvent:Connect(function(data)
     -- Start fight camera
     startFightCamera()
     
+    -- Hide Titles during Round
+    pcall(function()
+        if Character and Character:FindFirstChild("Head") and Character.Head:FindFirstChild("TitleBillboard") then
+            Character.Head.TitleBillboard.Enabled = false
+        end
+        if currentOpponent and currentOpponent.Character and currentOpponent.Character:FindFirstChild("Head") then
+            local oppBillboard = currentOpponent.Character.Head:FindFirstChild("TitleBillboard")
+            if oppBillboard then oppBillboard.Enabled = false end
+        end
+    end)
+
     print("✅ [FightingClient] Round ready! You can now attack!")
 end)
 
@@ -1636,39 +1664,18 @@ RoundEndEvent.OnClientEvent:Connect(function(data)
     print("🏅 [FightingClient] Round ended! Winner:", data.WinnerName)
     
     isRoundActive = false
+    isAttacking = false
+    isBlocking = false
+    isDodging = false
+    isBeingPushedBack = false
     
-    -- Stop blocking
+    -- Hentikan combat animations dan block
     stopBlock()
+    stopAllCombatAnimations()
     
-    -- Check if local player lost this round
-    local didPlayerWin = (data.WinnerName == Player.Name)
-    
-    -- If player lost, play death animation and lock movement
-    if not didPlayerWin then
-        -- Stop all combat animations first
-        stopAllCombatAnimations()
-        
-        -- Load and play death animation in loop
-        if Animator and FightingConfig.Animations and FightingConfig.Animations.DeathAnimation then
-            local deathAnim = Instance.new("Animation")
-            deathAnim.AnimationId = FightingConfig.Animations.DeathAnimation
-            local deathTrack = Animator:LoadAnimation(deathAnim)
-            deathTrack.Looped = true
-            deathTrack.Priority = Enum.AnimationPriority.Action4
-            deathTrack:Play()
-            
-            -- Store for cleanup on next round
-            _G.currentDeathAnimation = deathTrack
-        end
-        
-        -- Completely lock movement and rotation
-        if Humanoid then
-            Humanoid.WalkSpeed = 0
-            Humanoid.JumpPower = 0
-            Humanoid.AutoRotate = false  -- Disable auto rotate
-            Humanoid.PlatformStand = true  -- Lock character completely
-        end
-    end
+    -- Jika kalah: server handle break-apart + respawn otomatis.
+    -- Client tidak perlu play death animation atau lock movement.
+    -- CharacterAdded pada client akan reload animations saat respawn.
 end)
 
 UpdateStatsEvent.OnClientEvent:Connect(function(data)
@@ -2063,9 +2070,35 @@ UserInputService.InputBegan:Connect(function(input, gpe)
                         debugDummy = found
                         if debugDummy then
                             print("🎯 [DEBUG] Dummy reference acquired:", debugDummy.Name)
+                            local head = debugDummy:FindFirstChild("Head")
+                            if head and head:FindFirstChild("TitleBillboard") then
+                                head.TitleBillboard.Enabled = false
+                            end
                         end
                     end
                     task.wait(0.5)
+                end
+            end)
+
+            -- Lock Utilities (Music & Dance) and Hide Title
+            pcall(function()
+                if _G.DanceIcon then
+                    _G.DanceIcon:deselect()
+                    _G.DanceIcon:lock()
+                end
+                if _G.MusicIcon then
+                    _G.MusicIcon:deselect()
+                    _G.MusicIcon:lock()
+                end
+                
+                -- Force stop current dance
+                local dComm = ReplicatedStorage:FindFirstChild("DanceComm")
+                if dComm and dComm:FindFirstChild("StopDance") then
+                    dComm.StopDance:FireServer()
+                end
+
+                if Character and Character:FindFirstChild("Head") and Character.Head:FindFirstChild("TitleBillboard") then
+                    Character.Head.TitleBillboard.Enabled = false
                 end
             end)
             
@@ -2095,6 +2128,16 @@ UserInputService.InputBegan:Connect(function(input, gpe)
                 -- Stop Fight Camera
                 stopFightCamera()
             end
+
+            -- Unlock Utilities (Music & Dance) and Show Title
+            pcall(function()
+                if _G.DanceIcon then _G.DanceIcon:unlock() end
+                if _G.MusicIcon then _G.MusicIcon:unlock() end
+
+                if Character and Character:FindFirstChild("Head") and Character.Head:FindFirstChild("TitleBillboard") then
+                    Character.Head.TitleBillboard.Enabled = true
+                end
+            end)
         end
         
         task.wait(0.5) -- debounce
